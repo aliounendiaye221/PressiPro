@@ -502,9 +502,15 @@ export default function LandingPage() {
               </div>
             </div>
           </div>
-          <div className="border-t border-gray-800 mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="border-t border-gray-800 mt-12 pt-8 flex flex-col items-center gap-4">
             <p className="text-sm text-gray-500">© {new Date().getFullYear()} PressiPro. Tous droits réservés.</p>
-            <p className="text-sm text-gray-500">Fait avec ❤️ à Dakar, Sénégal</p>
+            <div className="flex flex-col sm:flex-row items-center gap-2 text-sm text-gray-500">
+              <span>Créé par <strong className="text-gray-300">ALIOUNE NDIAYE</strong></span>
+              <span className="hidden sm:inline">·</span>
+              <a href="mailto:aliounendiaye2511@gmail.com" className="text-primary-400 hover:text-primary-300 transition-colors">aliounendiaye2511@gmail.com</a>
+              <span className="hidden sm:inline">·</span>
+              <a href="tel:+221786037913" className="text-primary-400 hover:text-primary-300 transition-colors">+221 78 603 79 13</a>
+            </div>
           </div>
         </div>
       </section>

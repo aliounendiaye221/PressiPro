@@ -7,3 +7,5 @@ node_modules/
 next-env.d.ts
 build-output.txt
 build.log
+.vercel
+.env*.local

@@ -16,6 +16,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
     "@prisma/client": "^6.2.0",
     "@react-pdf/renderer": "^4.1.0",
     "bcryptjs": "^2.4.3",

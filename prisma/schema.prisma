@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── TENANT ────────────────────────────────────────────────
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String   // Nom du pressing
+  address     String?
+  phone       String?
+  logoUrl     String?
+  waveNumber  String?  // Numéro Wave pour paiement
+  omNumber    String?  // Numéro Orange Money pour paiement
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users     User[]
+  customers Customer[]
+  orders    Order[]
+  services  Service[]
+  payments  Payment[]
+  auditLogs AuditLog[]
+}
+
+// ─── USER ──────────────────────────────────────────────────
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  AGENT
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  email     String
+  password  String   // bcrypt hash
+  name      String
+  role      Role     @default(AGENT)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+// ─── CUSTOMER ──────────────────────────────────────────────
+model Customer {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  phone     String
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@index([tenantId, name])
+}
+
+// ─── SERVICE ───────────────────────────────────────────────
+enum PricingType {
+  PER_ITEM  // Tarification à la pièce
+  PER_KG    // Tarification au kilo
+}
+
+model Service {
+  id          String      @id @default(cuid())
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  name        String      // e.g. "Chemise", "Pantalon", "Lavage au kilo"
+  price       Int         // prix en FCFA (entier) — par pièce ou par kg
+  pricingType PricingType @default(PER_ITEM)
+  category    String?     // e.g. "Repassage", "Lavage", "Teinture"
+  isQuickItem Boolean     @default(false) // top 10 boutons rapides
+  sortOrder   Int         @default(0)
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  orderItems  OrderItem[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// ─── ORDER ─────────────────────────────────────────────────
+enum OrderStatus {
+  RECU
+  TRAITEMENT
+  PRET
+  LIVRE
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  code        String      // Code court unique par tenant ex: "P-00123"
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  status      OrderStatus @default(RECU)
+  totalAmount Int         @default(0) // total FCFA
+  paidAmount  Int         @default(0) // cache total payé
+  notes       String?
+  promisedAt  DateTime?   // date promesse
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  items           OrderItem[]
+  payments        Payment[]
+  statusHistory   OrderStatusHistory[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, code])
+  @@index([tenantId, status])
+  @@index([customerId])
+}
+
+// ─── ORDER ITEM ────────────────────────────────────────────
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  serviceId   String
+  service     Service @relation(fields: [serviceId], references: [id])
+  name        String  // snapshot du nom service au moment du dépôt
+  quantity    Int     @default(1)
+  unitPrice   Int     // snapshot du prix unitaire
+  weight      Float?  // poids en kg (pour tarification au kilo)
+  pricingType String  @default("PER_ITEM") // PER_ITEM ou PER_KG snapshot
+  total       Int     // quantity * unitPrice ou weight * unitPrice
+
+  @@index([orderId])
+}
+
+// ─── ORDER STATUS HISTORY ──────────────────────────────────
+model OrderStatusHistory {
+  id         String      @id @default(cuid())
+  orderId    String
+  order      Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  changedBy  String?     // userId
+  note       String?
+  createdAt  DateTime    @default(now())
+
+  @@index([orderId])
+}
+
+// ─── PAYMENT ───────────────────────────────────────────────
+enum PaymentMethod {
+  CASH
+  OM        // Orange Money
+  WAVE
+  OTHER
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  orderId   String
+  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount    Int           // montant en FCFA
+  method    PaymentMethod @default(CASH)
+  note      String?
+  createdBy String?       // userId
+  createdAt DateTime      @default(now())
+
+  @@index([tenantId])
+  @@index([orderId])
+  @@index([tenantId, createdAt])
+}
+
+// ─── AUDIT LOG ─────────────────────────────────────────────
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String   // STATUS_CHANGE, PAYMENT_CREATED, RECEIPT_PRINT, ORDER_CREATED, ORDER_EDITED, etc.
+  entity    String   // "Order", "Payment", etc.
+  entityId  String
+  details   String?  // JSON stringified details
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([entityId])
+}

@@ -1,0 +1,116 @@
+Retrieving projectÔÇª
+Deploying lune221s-projects/pressipro
+Uploading [--------------------] (0.0B/193.9KB)
+Uploading [======--------------] (63.5KB/193.9KB)
+Uploading [===========---------] (111.5KB/193.9KB)
+Uploading [================----] (159.5KB/193.9KB)
+Uploading [====================] (193.9KB/193.9KB)
+Inspect: https://vercel.com/lune221s-projects/pressipro/DR1zyAwXRtwjfVVNmfTFssbz7eEG [3s]
+Production: https://pressipro-8s2o03ilr-lune221s-projects.vercel.app [3s]
+Building...
+Building...
+Building: Running build in Portland, USA (West) ÔÇô pdx1
+Building: Build machine configuration: 2 cores, 8 GB
+Building: Retrieving list of deployment files...
+Building: Downloading 90 deployment files...
+Building: Restored build cache from previous deployment (Ac9Xr2SmK1b49JYP9JbZ9cGoBzPB)
+Building: Running "vercel build"
+Building: Vercel CLI 50.28.0
+Building: Installing dependencies...
+Building: > pressipro@0.1.0 postinstall
+Building: > prisma generate
+Building: Environment variables loaded from .env
+Building: Prisma schema loaded from prisma/schema.prisma
+Building: Ô£ö Generated Prisma Client (v6.19.2) to ./node_modules/@prisma/client in 163ms
+Building: Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+Building: Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+Building: up to date in 3s
+Building: 168 packages are looking for funding
+Building: run `npm fund` for details
+Building: Detected Next.js version: 15.5.12
+Building: Running "npm run build"
+Building: > pressipro@0.1.0 build
+Building: > prisma generate && prisma db push --skip-generate && next build
+Building: Environment variables loaded from .env
+Building: Prisma schema loaded from prisma/schema.prisma
+Building: ÔöîÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÉ
+Building: Ôöé  Update available 6.19.2 -> 7.4.2                       Ôöé
+Building: Ôöé                                                         Ôöé
+Building: Ôöé  This is a major update - please follow the guide at    Ôöé
+Building: Ôöé  https://pris.ly/d/major-version-upgrade                Ôöé
+Building: Ôöé                                                         Ôöé
+Building: Ôöé  Run the following to update                            Ôöé
+Building: Ôöé    npm i --save-dev prisma@latest                       Ôöé
+Building: Ôöé    npm i @prisma/client@latest                          Ôöé
+Building: ÔööÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÿ
+Building: Ô£ö Generated Prisma Client (v6.19.2) to ./node_modules/@prisma/client in 114ms
+Building: Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+Building: Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+Building: Environment variables loaded from .env
+Building: Prisma schema loaded from prisma/schema.prisma
+Building: Datasource "db": PostgreSQL database "neondb", schema "public" at "ep-summer-surf-ahsp02zb-pooler.c-3.us-east-1.aws.neon.tech"
+Building: The database is already in sync with the Prisma schema.
+Building: Ôû▓ Next.js 15.5.12
+Building: - Environments: .env
+Building: Creating an optimized production build ...
+Building: Ô£ô Compiled successfully in 7.2s
+Building: Linting and checking validity of types ...
+Building: Collecting page data ...
+Building: Generating static pages (0/26) ...
+Building: Generating static pages (6/26)
+Building: Generating static pages (12/26)
+Building: Generating static pages (19/26)
+Building: Ô£ô Generating static pages (26/26)
+Building: Finalizing page optimization ...
+Building: Collecting build traces ...
+Building: Route (app)                                 Size  First Load JS
+Building: Ôöî Ôùï /                                    9.86 kB         115 kB
+Building: Ôö£ Ôùï /_not-found                            189 B         102 kB
+Building: Ôö£ Ôùï /admin                               12.4 kB         114 kB
+Building: Ôö£ ãÆ /api/admin/customers                   189 B         102 kB
+Building: Ôö£ ãÆ /api/admin/orders                      189 B         102 kB
+Building: Ôö£ ãÆ /api/admin/stats                       189 B         102 kB
+Building: Ôö£ ãÆ /api/admin/tenants/[id]                189 B         102 kB
+Building: Ôö£ ãÆ /api/auth/login                        189 B         102 kB
+Building: Ôö£ ãÆ /api/auth/logout                       189 B         102 kB
+Building: Ôö£ ãÆ /api/auth/me                           189 B         102 kB
+Building: Ôö£ ãÆ /api/auth/register                     189 B         102 kB
+Building: Ôö£ ãÆ /api/customers                         189 B         102 kB
+Building: Ôö£ ãÆ /api/customers/[id]                    189 B         102 kB
+Building: Ôö£ ãÆ /api/dashboard                         189 B         102 kB
+Building: Ôö£ ãÆ /api/orders                            189 B         102 kB
+Building: Ôö£ ãÆ /api/orders/[id]                       189 B         102 kB
+Building: Ôö£ ãÆ /api/orders/[id]/payments              189 B         102 kB
+Building: Ôö£ ãÆ /api/orders/[id]/receipt.pdf           189 B         102 kB
+Building: Ôö£ ãÆ /api/orders/[id]/status                189 B         102 kB
+Building: Ôö£ ãÆ /api/services                          189 B         102 kB
+Building: Ôö£ ãÆ /api/services/[id]                     189 B         102 kB
+Building: Ôö£ ãÆ /api/tenant                            189 B         102 kB
+Building: Ôö£ ãÆ /api/users                             189 B         102 kB
+Building: Ôö£ ãÆ /api/users/[id]                        189 B         102 kB
+Building: Ôö£ Ôùï /customers                           4.57 kB         110 kB
+Building: Ôö£ ãÆ /customers/[id]                      2.64 kB         108 kB
+Building: Ôö£ Ôùï /dashboard                           4.48 kB         107 kB
+Building: Ôö£ Ôùï /login                               3.08 kB         108 kB
+Building: Ôö£ Ôùï /offline                              2.5 kB         108 kB
+Building: Ôö£ Ôùï /orders                              4.02 kB         109 kB
+Building: Ôö£ ãÆ /orders/[id]                          9.8 kB         112 kB
+Building: Ôö£ Ôùï /orders/new                          6.85 kB         109 kB
+Building: Ôö£ Ôùï /register                            3.28 kB         109 kB
+Building: Ôöö Ôùï /settings                            8.24 kB         110 kB
+Building: + First Load JS shared by all             102 kB
+Building: Ôö£ chunks/1255-2a16e545c6b308bb.js      45.9 kB
+Building: Ôö£ chunks/4bd1b696-f785427dddbba9fb.js  54.2 kB
+Building: Ôöö other shared chunks (total)          1.93 kB
+Building: ãÆ Middleware                             40.1 kB
+Building: Ôùï  (Static)   prerendered as static content
+Building: ãÆ  (Dynamic)  server-rendered on demand
+Building: Traced Next.js server files in: 68.506ms
+Building: Created all serverless functions in: 385.458ms
+Building: Collected static files (public/, static/, .next/static): 9.72ms
+Building: Build Completed in /vercel/output [39s]
+Building: Deploying outputs...
+[2K[1A[2K[GProduction: https://pressipro-8s2o03ilr-lune221s-projects.vercel.app [58s]
+Completing...
+Aliased: https://pressipro.vercel.app [58s]
+https://pressipro-8s2o03ilr-lune221s-projects.vercel.app

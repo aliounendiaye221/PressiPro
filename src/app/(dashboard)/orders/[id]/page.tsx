@@ -4,6 +4,13 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import {
+  createOfflineTempId,
+  enqueueOfflineAction,
+  findQueuedActionByTempEntityId,
+  removeOfflineQueueItem,
+} from "@/lib/offline-queue";
+import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
+import {
   ArrowLeft,
   ChevronRight,
   Plus,
@@ -17,6 +24,15 @@ import {
   User,
   Banknote,
   History,
+  Download,
+  Trash2,
+  Pencil,
+  Save,
+  X,
+  Clock3,
+  CheckCircle2,
+  Truck,
+  Inbox,
 } from "lucide-react";
 
 interface OrderDetail {
@@ -34,6 +50,8 @@ interface OrderDetail {
   statusHistory: { id: string; fromStatus: string | null; toStatus: string; createdAt: string; note?: string }[];
 }
 
+const ORDER_DETAIL_CACHE_KEY_PREFIX = "order-detail:";
+
 function formatFCFA(n: number) {
   return new Intl.NumberFormat("fr-SN").format(n) + " F";
 }
@@ -47,6 +65,24 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const NEXT_STATUS: Record<string, string> = {
   RECU: "TRAITEMENT", TRAITEMENT: "PRET", PRET: "LIVRE",
+};
+const STATUS_FLOW = ["RECU", "TRAITEMENT", "PRET", "LIVRE"] as const;
+const STATUS_ACTIONS: Record<string, { label: string; helper: string; icon: typeof Inbox }> = {
+  RECU: {
+    label: "Passer en traitement",
+    helper: "La commande quitte l'accueil et entre dans l'atelier.",
+    icon: Clock3,
+  },
+  TRAITEMENT: {
+    label: "Marquer prête",
+    helper: "Utilisez cette action quand les articles sont terminés.",
+    icon: CheckCircle2,
+  },
+  PRET: {
+    label: "Marquer livrée",
+    helper: "Confirmez la remise au client.",
+    icon: Truck,
+  },
 };
 const METHOD_LABELS: Record<string, string> = {
   CASH: "Espèces", OM: "Orange Money", WAVE: "Wave", OTHER: "Autre",
@@ -65,34 +101,261 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
 
   // Payment form
   const [showPayment, setShowPayment] = useState(false);
   const [payAmount, setPayAmount] = useState(0);
   const [payMethod, setPayMethod] = useState("CASH");
 
+  // Edit states
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [editNotes, setEditNotes] = useState("");
+  const [editingDate, setEditingDate] = useState(false);
+  const [editDate, setEditDate] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [syncMessage, setSyncMessage] = useState("");
+  const [isOffline, setIsOffline] = useState(false);
+
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+
   const fetchOrder = useCallback(async () => {
-    const res = await fetch(`/api/orders/${id}`);
-    if (res.ok) {
-      setOrder(await res.json());
+    try {
+      const res = await fetch(`/api/orders/${id}`);
+      if (res.ok) {
+        const data = (await res.json()) as OrderDetail;
+        setOrder(data);
+        writeOfflineCache(`${ORDER_DETAIL_CACHE_KEY_PREFIX}${id}`, data);
+      } else {
+        throw new Error("fetch-order-failed");
+      }
+    } catch {
+      const cached = readOfflineCache<OrderDetail>(`${ORDER_DETAIL_CACHE_KEY_PREFIX}${id}`);
+      if (cached) {
+        setOrder(cached.data);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [id]);
 
-  useEffect(() => { fetchOrder(); }, [fetchOrder]);
+  useEffect(() => {
+    setIsOffline(!navigator.onLine);
+    const syncNetworkState = () => setIsOffline(!navigator.onLine);
+    window.addEventListener("online", syncNetworkState);
+    window.addEventListener("offline", syncNetworkState);
+
+    fetchOrder();
+
+    return () => {
+      window.removeEventListener("online", syncNetworkState);
+      window.removeEventListener("offline", syncNetworkState);
+    };
+  }, [fetchOrder]);
+
+  const queueStatusChange = (nextStatus: string) => {
+    if (!order) return;
+
+    const previousStatus = order.status;
+    enqueueOfflineAction({
+      type: "UPDATE_ORDER_STATUS",
+      request: {
+        url: `/api/orders/${id}/status`,
+        method: "PUT",
+        body: { status: nextStatus },
+      },
+    });
+
+    setOrder((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: nextStatus,
+            statusHistory: [
+              ...prev.statusHistory,
+              {
+                id: createOfflineTempId(),
+                fromStatus: previousStatus,
+                toStatus: nextStatus,
+                createdAt: new Date().toISOString(),
+                note: "En attente de synchronisation",
+              },
+            ],
+          }
+        : prev
+    );
+    writeOfflineCache(`${ORDER_DETAIL_CACHE_KEY_PREFIX}${id}`, {
+      ...(order ?? {}),
+      status: nextStatus,
+      statusHistory: [
+        ...order.statusHistory,
+        {
+          id: createOfflineTempId(),
+          fromStatus: order.status,
+          toStatus: nextStatus,
+          createdAt: new Date().toISOString(),
+          note: "En attente de synchronisation",
+        },
+      ],
+    } as OrderDetail);
+    setSyncMessage("Changement de statut enregistre hors ligne. Il sera rejoue automatiquement.");
+  };
+
+  const queuePayment = (amount: number, method: string) => {
+    if (!order) return;
+
+    const tempPaymentId = createOfflineTempId();
+
+    enqueueOfflineAction({
+      type: "ADD_PAYMENT",
+      request: {
+        url: `/api/orders/${id}/payments`,
+        method: "POST",
+        body: { amount, method },
+      },
+      meta: { tempEntityId: tempPaymentId },
+    });
+
+    setOrder((prev) =>
+      prev
+        ? {
+            ...prev,
+            paidAmount: Math.min(prev.totalAmount, prev.paidAmount + amount),
+            payments: [
+              {
+                id: tempPaymentId,
+                amount,
+                method,
+                createdAt: new Date().toISOString(),
+              },
+              ...prev.payments,
+            ],
+          }
+        : prev
+    );
+    writeOfflineCache(`${ORDER_DETAIL_CACHE_KEY_PREFIX}${id}`, {
+      ...(order ?? {}),
+      paidAmount: Math.min(order.paidAmount + amount, order.totalAmount),
+      payments: [
+        {
+          id: tempPaymentId,
+          amount,
+          method,
+          createdAt: new Date().toISOString(),
+        },
+        ...order.payments,
+      ],
+    } as OrderDetail);
+    setShowPayment(false);
+    setPayAmount(0);
+    setSyncMessage("Paiement enregistre hors ligne. Il sera rejoue automatiquement.");
+  };
+
+  const queueOrderFieldUpdate = (changes: { notes?: string | null; promisedAt?: string | null }, successMessage: string) => {
+    if (!order) return;
+
+    enqueueOfflineAction({
+      type: "UPDATE_ORDER_FIELDS",
+      request: {
+        url: `/api/orders/${id}`,
+        method: "PUT",
+        body: changes,
+      },
+    });
+
+    const nextOrder: OrderDetail = {
+      ...order,
+      ...(changes.notes !== undefined ? { notes: changes.notes } : {}),
+      ...(changes.promisedAt !== undefined ? { promisedAt: changes.promisedAt } : {}),
+    };
+    setOrder(nextOrder);
+    writeOfflineCache(`${ORDER_DETAIL_CACHE_KEY_PREFIX}${id}`, nextOrder);
+    setSyncMessage(successMessage);
+  };
+
+  const queueDeletePayment = (paymentId: string) => {
+    if (!order) return;
+
+    const payment = order.payments.find((entry) => entry.id === paymentId);
+    if (!payment) return;
+
+    if (paymentId.startsWith("offline-")) {
+      const queuedAction = findQueuedActionByTempEntityId(paymentId);
+      if (queuedAction) {
+        removeOfflineQueueItem(queuedAction.id);
+      }
+    } else {
+      enqueueOfflineAction({
+        type: "DELETE_PAYMENT",
+        request: {
+          url: `/api/orders/${id}/payments`,
+          method: "DELETE",
+          body: { paymentId },
+        },
+      });
+    }
+
+    const nextOrder: OrderDetail = {
+      ...order,
+      paidAmount: Math.max(0, order.paidAmount - payment.amount),
+      payments: order.payments.filter((entry) => entry.id !== paymentId),
+    };
+    setOrder(nextOrder);
+    writeOfflineCache(`${ORDER_DETAIL_CACHE_KEY_PREFIX}${id}`, nextOrder);
+    setSyncMessage(
+      paymentId.startsWith("offline-")
+        ? "Paiement local retire de la file d'attente."
+        : "Suppression du paiement enregistree hors ligne. Elle sera rejouee automatiquement."
+    );
+  };
+
+  const queueDeleteOrder = () => {
+    if (!order) return;
+
+    enqueueOfflineAction({
+      type: "DELETE_ORDER",
+      request: {
+        url: `/api/orders/${id}`,
+        method: "DELETE",
+        body: {},
+      },
+    });
+    router.push("/orders");
+  };
 
   const advanceStatus = async () => {
     if (!order) return;
     const next = NEXT_STATUS[order.status];
     if (!next) return;
+    setEditError("");
     setActionLoading(true);
-    await fetch(`/api/orders/${id}/status`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
-    await fetchOrder();
-    setActionLoading(false);
+
+    if (!navigator.onLine) {
+      queueStatusChange(next);
+      setActionLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/orders/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setEditError(data?.error || "Erreur");
+        return;
+      }
+
+      await fetchOrder();
+    } catch {
+      queueStatusChange(next);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const rollbackStatus = async () => {
@@ -102,28 +365,164 @@ export default function OrderDetailPage() {
     };
     const prev = rollbacks[order.status];
     if (!prev) return;
+    setEditError("");
     setActionLoading(true);
-    await fetch(`/api/orders/${id}/status`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: prev }),
-    });
-    await fetchOrder();
-    setActionLoading(false);
+
+    if (!navigator.onLine) {
+      queueStatusChange(prev);
+      setActionLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/orders/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: prev }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setEditError(data?.error || "Erreur");
+        return;
+      }
+
+      await fetchOrder();
+    } catch {
+      queueStatusChange(prev);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const addPayment = async () => {
     if (!order || payAmount <= 0) return;
+    setEditError("");
     setActionLoading(true);
-    const res = await fetch(`/api/orders/${id}/payments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: payAmount, method: payMethod }),
-    });
-    if (res.ok) {
+
+    if (!navigator.onLine) {
+      queuePayment(payAmount, payMethod);
+      setActionLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/orders/${id}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: payAmount, method: payMethod }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setEditError(data?.error || "Erreur");
+        return;
+      }
+
       setShowPayment(false);
       setPayAmount(0);
       await fetchOrder();
+    } catch {
+      queuePayment(payAmount, payMethod);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const saveNotes = async () => {
+    setEditError("");
+    setActionLoading(true);
+    if (!navigator.onLine) {
+      queueOrderFieldUpdate({ notes: editNotes }, "Notes enregistrees hors ligne. Elles seront synchronisees automatiquement.");
+      setEditingNotes(false);
+      setActionLoading(false);
+      return;
+    }
+
+    const res = await fetch(`/api/orders/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes: editNotes }),
+    });
+    if (res.ok) {
+      setEditingNotes(false);
+      await fetchOrder();
+    } else {
+      const data = await res.json();
+      setEditError(data.error || "Erreur");
+    }
+    setActionLoading(false);
+  };
+
+  const savePromisedAt = async () => {
+    setEditError("");
+    setActionLoading(true);
+    if (!navigator.onLine) {
+      queueOrderFieldUpdate({ promisedAt: editDate || null }, "Date promise enregistree hors ligne. Elle sera synchronisee automatiquement.");
+      setEditingDate(false);
+      setActionLoading(false);
+      return;
+    }
+
+    const res = await fetch(`/api/orders/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ promisedAt: editDate || null }),
+    });
+    if (res.ok) {
+      setEditingDate(false);
+      await fetchOrder();
+    } else {
+      const data = await res.json();
+      setEditError(data.error || "Erreur");
+    }
+    setActionLoading(false);
+  };
+
+  const deleteOrder = async () => {
+    setEditError("");
+    setActionLoading(true);
+    if (!navigator.onLine) {
+      if (order && order.paidAmount > 0) {
+        setEditError("Suppression hors ligne reservee aux commandes sans paiement.");
+        setActionLoading(false);
+        return;
+      }
+      queueDeleteOrder();
+      setActionLoading(false);
+      return;
+    }
+
+    const res = await fetch(`/api/orders/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      router.push("/orders");
+    } else {
+      const data = await res.json();
+      setEditError(data.error || "Erreur lors de la suppression");
+      setDeleteConfirm(false);
+    }
+    setActionLoading(false);
+  };
+
+  const deletePayment = async (paymentId: string) => {
+    setEditError("");
+    setActionLoading(true);
+    if (!navigator.onLine) {
+      queueDeletePayment(paymentId);
+      setActionLoading(false);
+      return;
+    }
+
+    const res = await fetch(`/api/orders/${id}/payments`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentId }),
+    });
+    if (res.ok) {
+      await fetchOrder();
+    } else {
+      const data = await res.json();
+      setEditError(data.error || "Erreur");
     }
     setActionLoading(false);
   };
@@ -143,31 +542,130 @@ export default function OrderDetailPage() {
   const amountDue = order.totalAmount - order.paidAmount;
   const paymentStatus = amountDue <= 0 ? "PAYE" : order.paidAmount > 0 ? "PARTIEL" : "IMPAYE";
   const isLate = order.promisedAt && new Date(order.promisedAt) < new Date() && order.status !== "LIVRE";
+  const nextStatus = NEXT_STATUS[order.status];
+  const nextAction = nextStatus ? STATUS_ACTIONS[order.status] : null;
+  const receiptPreviewSrc = `/api/orders/${order.id}/receipt.pdf?preview=1&v=${encodeURIComponent([
+    order.status,
+    order.totalAmount,
+    order.paidAmount,
+    order.promisedAt || "none",
+    order.notes?.length || 0,
+    order.payments.length,
+    order.statusHistory.length,
+  ].join("-"))}`;
 
-  // WhatsApp messages
-  const receiptMsg = `Bonjour ${order.customer.name},\n\nVotre dépôt *${order.code}* au pressing a été enregistré.\nTotal: ${formatFCFA(order.totalAmount)}\nAvance: ${formatFCFA(order.paidAmount)}\nReste: ${formatFCFA(amountDue)}\n\nMerci de votre confiance !`;
-  const readyMsg = `Bonjour ${order.customer.name},\n\nVotre commande *${order.code}* est prête ! 🎉\nVeuillez passer la récupérer.\n${amountDue > 0 ? `\nReste à payer: ${formatFCFA(amountDue)}` : ""}\n\nMerci !`;
+  // WhatsApp messages (sans lien PDF - l'admin télécharge et joint le PDF manuellement)
+  const receiptMsg = `Bonjour ${order.customer.name},\n\nVotre dépôt *${order.code}* au pressing a été enregistré.\nTotal: ${formatFCFA(order.totalAmount)}\nAvance: ${formatFCFA(order.paidAmount)}\nReste: ${formatFCFA(amountDue)}\n\n📄 Votre facture est jointe à ce message.\n\nMerci de votre confiance !`;
+  const readyMsg = `Bonjour ${order.customer.name},\n\nVotre commande *${order.code}* est prête ! 🎉\nVeuillez passer la récupérer.\n${amountDue > 0 ? `\nReste à payer: ${formatFCFA(amountDue)}` : ""}\n\n📄 Votre facture est jointe à ce message.\n\nMerci !`;
+
+  const downloadReceiptPdf = async () => {
+    const res = await fetch(`/api/orders/${order.id}/receipt.pdf?download=1`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/pdf",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error("receipt-download-failed");
+    }
+
+    const pdfBlob = await res.blob();
+    return new File([pdfBlob], `recu-${order.code}.pdf`, {
+      type: "application/pdf",
+    });
+  };
+
+  const triggerReceiptDownload = (file: File) => {
+    const objectUrl = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  };
+
+  const openWhatsAppConversation = (message: string) => {
+    window.open(
+      buildWhatsAppUrl(order.customer.phone, message),
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
+  const sendWhatsAppWithPdf = async (message: string) => {
+    setShareLoading(true);
+    setEditError("");
+    setSyncMessage("");
+
+    try {
+      const pdfFile = await downloadReceiptPdf();
+
+      if (navigator.share) {
+        const sharePayload: ShareData = {
+          title: `Reçu ${order.code}`,
+          text: message,
+          files: [pdfFile],
+        };
+
+        if (!navigator.canShare || navigator.canShare(sharePayload)) {
+          await navigator.share(sharePayload);
+          setSyncMessage("Le reçu est prêt à être partagé. Sélectionnez WhatsApp dans la feuille de partage.");
+          return;
+        }
+      }
+
+      triggerReceiptDownload(pdfFile);
+      openWhatsAppConversation(message);
+      setSyncMessage("Le partage direct n'est pas disponible sur cet appareil. Le reçu a été téléchargé puis WhatsApp a été ouvert.");
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        setSyncMessage("");
+        return;
+      }
+
+      setEditError("Impossible de préparer le reçu pour WhatsApp.");
+    } finally {
+      setShareLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
+      {isOffline && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Consultation hors ligne active. Les modifications compatibles seront placees en file d'attente.
+        </div>
+      )}
+
+      {syncMessage && (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          {syncMessage}
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <button onClick={() => router.push("/orders")} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all">
+      <div className="flex items-start sm:items-center gap-2 sm:gap-3 flex-wrap">
+        <button onClick={() => router.push("/orders")} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all shrink-0">
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <h1 className="text-2xl font-bold font-mono text-gray-900">{order.code}</h1>
-        <span className={`badge text-base px-3 py-1 ${STATUS_COLORS[order.status]}`}>
-          {STATUS_LABELS[order.status]}
-        </span>
-        {paymentStatus === "PAYE" && <span className="badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10 text-sm px-3 py-1">PAYÉ</span>}
-        {paymentStatus === "PARTIEL" && <span className="badge bg-amber-50 text-amber-700 ring-1 ring-amber-600/10 text-sm px-3 py-1">PARTIEL</span>}
-        {paymentStatus === "IMPAYE" && <span className="badge bg-red-50 text-red-700 ring-1 ring-red-600/10 text-sm px-3 py-1">IMPAYÉ</span>}
-        {isLate && <span className="badge bg-red-500 text-white text-sm px-3 py-1 shadow-sm shadow-red-500/30">EN RETARD</span>}
+        <h1 className="text-lg sm:text-2xl font-bold font-mono text-gray-900">{order.code}</h1>
+        <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
+          <span className={`badge text-sm sm:text-base px-2.5 sm:px-3 py-0.5 sm:py-1 ${STATUS_COLORS[order.status]}`}>
+            {STATUS_LABELS[order.status]}
+          </span>
+          {paymentStatus === "PAYE" && <span className="badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">PAYÉ</span>}
+          {paymentStatus === "PARTIEL" && <span className="badge bg-amber-50 text-amber-700 ring-1 ring-amber-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">PARTIEL</span>}
+          {paymentStatus === "IMPAYE" && <span className="badge bg-red-50 text-red-700 ring-1 ring-red-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">IMPAYÉ</span>}
+          {isLate && <span className="badge bg-red-500 text-white text-xs sm:text-sm px-2.5 py-0.5 sm:py-1 shadow-sm shadow-red-500/30">EN RETARD</span>}
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Left column: details */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-4 min-w-0">
           {/* Customer */}
           <div className="card">
             <div className="flex items-center gap-2 mb-3">
@@ -181,7 +679,8 @@ export default function OrderDetailPage() {
           {/* Items */}
           <div className="card">
             <h2 className="font-semibold mb-3">Articles</h2>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 sm:-mx-6">
+            <table className="min-w-[400px] w-full text-sm">
               <thead>
                 <tr className="border-b text-gray-500 text-left">
                   <th className="py-1">Article</th>
@@ -207,6 +706,7 @@ export default function OrderDetailPage() {
                 </tr>
               </tfoot>
             </table>
+            </div>
           </div>
 
           {/* Payments history */}
@@ -263,16 +763,23 @@ export default function OrderDetailPage() {
             ) : (
               <div className="space-y-2">
                 {order.payments.map((p) => (
-                  <div key={p.id} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
+                  <div key={p.id} className="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
                     <div>
                       <span className="font-medium">{formatFCFA(p.amount)}</span>
                       <span className="text-gray-500 ml-2">{METHOD_LABELS[p.method]}</span>
                     </div>
-                    <span className="text-gray-400">
-                      {new Date(p.createdAt).toLocaleString("fr-SN", {
-                        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-                      })}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400">
+                        {new Date(p.createdAt).toLocaleString("fr-SN", {
+                          day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                        })}
+                      </span>
+                      {isAdmin && order.status !== "LIVRE" && (
+                        <button onClick={() => deletePayment(p.id)} className="text-red-400 hover:text-red-600 p-1" title="Supprimer ce paiement" disabled={actionLoading}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -311,22 +818,71 @@ export default function OrderDetailPage() {
               ))}
             </div>
           </div>
+
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-gray-900">Aperçu du reçu</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Prévisualisation directe du PDF avant impression ou partage.</p>
+              </div>
+              <a
+                href={receiptPreviewSrc}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-medium text-primary-600 hover:text-primary-700"
+              >
+                Ouvrir en plein écran
+              </a>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-100">
+              <iframe
+                key={receiptPreviewSrc}
+                src={receiptPreviewSrc}
+                title={`Aperçu du reçu ${order.code}`}
+                className="h-[34rem] w-full bg-white"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Right column: actions */}
         <div className="space-y-4">
-          <div className="card space-y-3 sticky top-4">
+          <div className="card space-y-3 lg:sticky lg:top-4">
             <h2 className="font-semibold">Actions</h2>
 
+            <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Parcours commande</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {STATUS_FLOW.map((status, index) => (
+                  <div key={status} className="flex items-center gap-2">
+                    <span
+                      className={`badge px-2.5 py-1 text-xs ${status === order.status ? STATUS_COLORS[status] : "bg-white text-gray-500 ring-1 ring-gray-200"}`}
+                    >
+                      {STATUS_LABELS[status]}
+                    </span>
+                    {index < STATUS_FLOW.length - 1 && (
+                      <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Advance status */}
-            {NEXT_STATUS[order.status] && (
-              <button
-                onClick={advanceStatus}
-                disabled={actionLoading}
-                className="btn-primary w-full btn-lg"
-              >
-                Passer à : {STATUS_LABELS[NEXT_STATUS[order.status]]}
-              </button>
+            {nextStatus && nextAction && (
+              <div className="rounded-2xl border border-primary-100 bg-primary-50/70 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary-500">Action principale</p>
+                <button
+                  onClick={advanceStatus}
+                  disabled={actionLoading}
+                  className="btn-primary mt-3 w-full btn-lg"
+                >
+                  <nextAction.icon className="h-4 w-4" />
+                  {nextAction.label}
+                </button>
+                <p className="mt-2 text-xs text-primary-700/80">{nextAction.helper}</p>
+              </div>
             )}
 
             {/* Rollback (admin) */}
@@ -359,25 +915,31 @@ export default function OrderDetailPage() {
               <Copy className="w-3.5 h-3.5" /> Réimprimer (DUPLICATA)
             </a>
 
-            {/* WhatsApp */}
+            {/* Download PDF */}
             <a
-              href={buildWhatsAppUrl(order.customer.phone, receiptMsg)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-success w-full text-center block"
+              href={`/api/orders/${order.id}/receipt.pdf?download=1`}
+              className="btn-secondary w-full text-center block"
             >
-              <MessageCircle className="w-4 h-4" /> WhatsApp — Envoyer reçu
+              <Download className="w-4 h-4" /> Télécharger la facture
             </a>
 
+            {/* WhatsApp — télécharge le PDF puis ouvre WhatsApp */}
+            <button
+              onClick={() => sendWhatsAppWithPdf(receiptMsg)}
+              disabled={shareLoading}
+              className="btn-success w-full text-center flex items-center justify-center gap-2"
+            >
+              <MessageCircle className="w-4 h-4" /> {shareLoading ? "Préparation du reçu..." : "WhatsApp — Envoyer facture"}
+            </button>
+
             {order.status === "PRET" && (
-              <a
-                href={buildWhatsAppUrl(order.customer.phone, readyMsg)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-success w-full text-center block"
+              <button
+                onClick={() => sendWhatsAppWithPdf(readyMsg)}
+                disabled={shareLoading}
+                className="btn-success w-full text-center flex items-center justify-center gap-2"
               >
-                <MessageCircle className="w-4 h-4" /> WhatsApp — Commande prête
-              </a>
+                <MessageCircle className="w-4 h-4" /> {shareLoading ? "Préparation du reçu..." : "WhatsApp — Commande prête"}
+              </button>
             )}
 
             {/* Info */}
@@ -396,9 +958,85 @@ export default function OrderDetailPage() {
 
             {order.notes && (
               <div className="bg-gray-50 p-3 rounded-xl text-sm">
-                <p className="font-medium text-gray-600 flex items-center gap-1.5"><StickyNote className="w-3.5 h-3.5" /> Notes</p>
-                <p>{order.notes}</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-medium text-gray-600 flex items-center gap-1.5"><StickyNote className="w-3.5 h-3.5" /> Notes</p>
+                  {isAdmin && order.status !== "LIVRE" && !editingNotes && (
+                    <button onClick={() => { setEditNotes(order.notes || ""); setEditingNotes(true); }} className="text-primary-500 hover:text-primary-700 text-xs flex items-center gap-1">
+                      <Pencil className="w-3 h-3" /> Modifier
+                    </button>
+                  )}
+                </div>
+                {editingNotes ? (
+                  <div className="space-y-2">
+                    <textarea className="input-field text-sm w-full" rows={3} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+                    <div className="flex gap-2">
+                      <button className="btn-primary text-xs" onClick={saveNotes} disabled={actionLoading}><Save className="w-3 h-3" /> Sauvegarder</button>
+                      <button className="btn-secondary text-xs" onClick={() => setEditingNotes(false)}><X className="w-3 h-3" /> Annuler</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p>{order.notes}</p>
+                )}
               </div>
+            )}
+
+            {/* Add notes if none exist */}
+            {!order.notes && isAdmin && order.status !== "LIVRE" && (
+              editingNotes ? (
+                <div className="bg-gray-50 p-3 rounded-xl text-sm space-y-2">
+                  <p className="font-medium text-gray-600 flex items-center gap-1.5"><StickyNote className="w-3.5 h-3.5" /> Ajouter une note</p>
+                  <textarea className="input-field text-sm w-full" rows={3} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Notes sur la commande..." />
+                  <div className="flex gap-2">
+                    <button className="btn-primary text-xs" onClick={saveNotes} disabled={actionLoading}><Save className="w-3 h-3" /> Sauvegarder</button>
+                    <button className="btn-secondary text-xs" onClick={() => setEditingNotes(false)}><X className="w-3 h-3" /> Annuler</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => { setEditNotes(""); setEditingNotes(true); }} className="btn-secondary w-full text-xs">
+                  <StickyNote className="w-3.5 h-3.5" /> Ajouter une note
+                </button>
+              )
+            )}
+
+            {/* Edit promised date */}
+            {isAdmin && order.status !== "LIVRE" && (
+              editingDate ? (
+                <div className="bg-blue-50 p-3 rounded-xl text-sm space-y-2">
+                  <p className="font-medium text-blue-700 flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5" /> Date promise</p>
+                  <input type="datetime-local" className="input-field text-sm w-full" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+                  <div className="flex gap-2">
+                    <button className="btn-primary text-xs" onClick={savePromisedAt} disabled={actionLoading}><Save className="w-3 h-3" /> Sauvegarder</button>
+                    <button className="btn-secondary text-xs" onClick={() => setEditingDate(false)}><X className="w-3 h-3" /> Annuler</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => { setEditDate(order.promisedAt ? new Date(order.promisedAt).toISOString().slice(0, 16) : ""); setEditingDate(true); }} className="btn-secondary w-full text-xs">
+                  <CalendarClock className="w-3.5 h-3.5" /> {order.promisedAt ? "Modifier la date promise" : "Définir une date promise"}
+                </button>
+              )
+            )}
+
+            {/* Error message */}
+            {editError && <p className="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{editError}</p>}
+
+            {/* Delete order */}
+            {isAdmin && order.status !== "LIVRE" && (
+              deleteConfirm ? (
+                <div className="bg-red-50 p-3 rounded-xl space-y-2">
+                  <p className="text-sm font-medium text-red-700">Supprimer la commande {order.code} ?</p>
+                  <p className="text-xs text-red-600">Cette action est irréversible.</p>
+                  <div className="flex gap-2">
+                    <button className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-700" onClick={deleteOrder} disabled={actionLoading}>
+                      <Trash2 className="w-3 h-3 inline mr-1" /> Confirmer
+                    </button>
+                    <button className="btn-secondary text-xs" onClick={() => setDeleteConfirm(false)}>Annuler</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setDeleteConfirm(true)} className="w-full text-center block text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-300 rounded-xl py-2 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5 inline mr-1" /> Supprimer la commande
+                </button>
+              )
             )}
           </div>
         </div>

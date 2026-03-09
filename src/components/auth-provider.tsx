@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { readOfflineCache, removeOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 
 interface User {
   id: string;
@@ -15,6 +16,7 @@ interface Tenant {
   name: string;
   phone?: string;
   address?: string;
+  logoUrl?: string | null;
 }
 
 interface AuthContextType {
@@ -27,6 +29,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AUTH_CACHE_KEY = "auth:me";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -41,13 +44,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         setUser(data.user);
         setTenant(data.tenant);
+        writeOfflineCache(AUTH_CACHE_KEY, { user: data.user, tenant: data.tenant });
       } else {
         setUser(null);
         setTenant(null);
+        removeOfflineCache(AUTH_CACHE_KEY);
       }
     } catch {
-      setUser(null);
-      setTenant(null);
+      const cached = readOfflineCache<{ user: User | null; tenant: Tenant | null }>(AUTH_CACHE_KEY);
+      setUser(cached?.data.user ?? null);
+      setTenant(cached?.data.tenant ?? null);
     } finally {
       setLoading(false);
     }
@@ -67,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!res.ok) throw new Error(data.error || "Erreur de connexion");
     setUser(data.user);
     setTenant(data.tenant);
+    writeOfflineCache(AUTH_CACHE_KEY, { user: data.user, tenant: data.tenant });
     router.push("/dashboard");
   };
 
@@ -80,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!res.ok) throw new Error(data.error || "Erreur d'inscription");
     setUser(data.user);
     setTenant(data.tenant);
+    writeOfflineCache(AUTH_CACHE_KEY, { user: data.user, tenant: data.tenant });
     router.push("/dashboard");
   };
 
@@ -87,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
     setTenant(null);
+    removeOfflineCache(AUTH_CACHE_KEY);
     router.push("/login");
   };
 

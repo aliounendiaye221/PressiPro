@@ -10,7 +10,9 @@ import {
   ChevronRight,
   Filter,
   ClipboardList,
+  WifiOff,
 } from "lucide-react";
+import { formatOfflineCacheTime, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 
 interface Order {
   id: string;
@@ -55,6 +57,21 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [isOffline, setIsOffline] = useState(false);
+  const [usingCache, setUsingCache] = useState(false);
+  const [cacheUpdatedAt, setCacheUpdatedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsOffline(!navigator.onLine);
+    const syncNetworkState = () => setIsOffline(!navigator.onLine);
+    window.addEventListener("online", syncNetworkState);
+    window.addEventListener("offline", syncNetworkState);
+
+    return () => {
+      window.removeEventListener("online", syncNetworkState);
+      window.removeEventListener("offline", syncNetworkState);
+    };
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -62,12 +79,34 @@ export default function OrdersPage() {
     if (search) params.set("q", search);
     if (statusFilter) params.set("status", statusFilter);
     params.set("page", String(page));
+    const cacheKey = `orders:${params.toString()}`;
 
-    const res = await fetch(`/api/orders?${params}`);
-    const data = await res.json();
-    setOrders(data.orders || []);
-    setTotal(data.total || 0);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/orders?${params}`);
+      if (!res.ok) {
+        throw new Error("orders-fetch-failed");
+      }
+
+      const data = await res.json();
+      setOrders(data.orders || []);
+      setTotal(data.total || 0);
+      setUsingCache(false);
+      setCacheUpdatedAt(new Date().toISOString());
+      writeOfflineCache(cacheKey, { orders: data.orders || [], total: data.total || 0 });
+    } catch {
+      const cached = readOfflineCache<{ orders: Order[]; total: number }>(cacheKey);
+      if (cached) {
+        setOrders(cached.data.orders || []);
+        setTotal(cached.data.total || 0);
+        setUsingCache(true);
+        setCacheUpdatedAt(cached.updatedAt);
+      } else {
+        setOrders([]);
+        setTotal(0);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, [search, statusFilter, page]);
 
   useEffect(() => {
@@ -77,9 +116,19 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-6">
+      {(isOffline || usingCache) && (
+        <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          <span>
+            Liste issue du cache local
+            {formatOfflineCacheTime(cacheUpdatedAt) ? ` du ${formatOfflineCacheTime(cacheUpdatedAt)}` : ""}.
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Commandes</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Commandes</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} commande{total > 1 ? "s" : ""} au total</p>
         </div>
         <Link href="/orders/new" className="btn-primary">
@@ -89,7 +138,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Search & filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -160,7 +209,7 @@ export default function OrdersPage() {
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-lg font-bold text-gray-900">{formatFCFA(order.totalAmount)}</p>
+                  <p className="text-base sm:text-lg font-bold text-gray-900">{formatFCFA(order.totalAmount)}</p>
                   {order.paidAmount < order.totalAmount && (
                     <p className="text-xs text-red-500 font-medium">
                       Reste: {formatFCFA(order.totalAmount - order.paidAmount)}

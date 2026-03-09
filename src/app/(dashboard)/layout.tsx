@@ -72,10 +72,23 @@ function Sidebar() {
       >
         {/* Logo / Header */}
         <div className="p-6 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/30">
-              <span className="text-white font-bold text-lg">P</span>
-            </div>
+          <Link
+            href="/"
+            onClick={() => setMobileOpen(false)}
+            className="flex items-center gap-3 rounded-2xl outline-none transition-opacity duration-200 hover:opacity-85 focus-visible:ring-2 focus-visible:ring-primary-500"
+            aria-label="Retourner à la page d'accueil PressiPro"
+          >
+            {tenant?.logoUrl ? (
+              <img
+                src={tenant.logoUrl}
+                alt={tenant.name}
+                className="w-10 h-10 rounded-xl object-cover shadow-lg ring-1 ring-gray-200/80"
+              />
+            ) : (
+              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/30">
+                <span className="text-white font-bold text-lg">P</span>
+              </div>
+            )}
             <div>
               <h1 className="text-lg font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent">
                 PressiPro
@@ -86,7 +99,7 @@ function Sidebar() {
                 </p>
               )}
             </div>
-          </div>
+          </Link>
         </div>
 
         {/* Navigation */}
@@ -183,10 +196,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-50/50">
+    <div className="min-h-screen flex bg-gray-50/50 overflow-x-hidden">
       <Sidebar />
-      <main className="flex-1 lg:ml-0 min-h-screen">
-        <div className="p-4 lg:p-8 max-w-7xl mx-auto animate-fade-in">
+      <main className="flex-1 min-w-0 min-h-screen">
+        <div className="pt-16 lg:pt-8 px-4 pb-4 sm:px-6 lg:px-8 max-w-7xl mx-auto animate-fade-in">
           {children}
         </div>
       </main>

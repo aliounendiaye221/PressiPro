@@ -393,9 +393,9 @@ export default function LandingPage() {
             </h2>
             <p className="text-lg text-gray-600 mt-4">Commencez gratuitement. Évoluez quand vous êtes prêt.</p>
           </div>
-          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto items-start">
             {PRICING.map((p, i) => (
-              <div key={i} className={`rounded-2xl p-6 border relative ${p.popular ? "bg-gradient-to-br from-primary-600 to-primary-800 text-white border-primary-500 shadow-2xl shadow-primary-500/20 scale-[1.03]" : "bg-white border-gray-200 hover:shadow-lg"} transition-all duration-300`}>
+              <div key={i} className={`rounded-2xl p-6 border relative ${p.popular ? "bg-gradient-to-br from-primary-600 to-primary-800 text-white border-primary-500 shadow-2xl shadow-primary-500/20 md:scale-[1.03]" : "bg-white border-gray-200 hover:shadow-lg"} transition-all duration-300`}>
                 {p.popular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1 rounded-full">
                     POPULAIRE

@@ -10,6 +10,9 @@ const updateTenantSchema = z.object({
   phone: z.string().max(20).optional().or(z.literal("")),
   waveNumber: z.string().max(20).optional().or(z.literal("")),
   omNumber: z.string().max(20).optional().or(z.literal("")),
+  logoUrl: z.string().url().max(500).optional().or(z.literal("")),
+  brandPrimaryColor: z.string().regex(/^#(?:[0-9a-fA-F]{6})$/).optional().or(z.literal("")),
+  brandAccentColor: z.string().regex(/^#(?:[0-9a-fA-F]{6})$/).optional().or(z.literal("")),
 });
 
 export async function GET() {
@@ -25,6 +28,8 @@ export async function GET() {
         waveNumber: true,
         omNumber: true,
         logoUrl: true,
+        brandPrimaryColor: true,
+        brandAccentColor: true,
       },
     });
     return successResponse(tenant);
@@ -47,6 +52,9 @@ export async function PUT(request: NextRequest) {
         phone: data.phone || null,
         waveNumber: data.waveNumber || null,
         omNumber: data.omNumber || null,
+        logoUrl: data.logoUrl || null,
+        brandPrimaryColor: data.brandPrimaryColor || null,
+        brandAccentColor: data.brandAccentColor || null,
       },
       select: {
         id: true,
@@ -56,6 +64,8 @@ export async function PUT(request: NextRequest) {
         waveNumber: true,
         omNumber: true,
         logoUrl: true,
+        brandPrimaryColor: true,
+        brandAccentColor: true,
       },
     });
 

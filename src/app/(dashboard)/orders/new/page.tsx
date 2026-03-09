@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Search, UserPlus, ShoppingCart, Plus, Minus, Weight, Package, CalendarClock, StickyNote, Banknote, Sparkles, Trash2 } from "lucide-react";
+import { createOfflineTempId, enqueueOfflineAction } from "@/lib/offline-queue";
+import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 
 interface Service {
   id: string;
@@ -28,6 +30,8 @@ interface CartItem {
   weight: number;
 }
 
+const SERVICES_CACHE_KEY = "services:catalog";
+
 function formatFCFA(n: number) {
   return new Intl.NumberFormat("fr-SN").format(n) + " F";
 }
@@ -45,19 +49,60 @@ export default function NewOrderPage() {
   const [advanceMethod, setAdvanceMethod] = useState("CASH");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [syncMessage, setSyncMessage] = useState("");
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
-    fetch("/api/services").then((r) => r.json()).then(setServices);
+    setIsOffline(!navigator.onLine);
+    const syncNetworkState = () => setIsOffline(!navigator.onLine);
+    window.addEventListener("online", syncNetworkState);
+    window.addEventListener("offline", syncNetworkState);
+
+    fetch("/api/services")
+      .then((r) => {
+        if (!r.ok) throw new Error("services-fetch-failed");
+        return r.json();
+      })
+      .then((data) => {
+        setServices(data);
+        writeOfflineCache(SERVICES_CACHE_KEY, data);
+      })
+      .catch(() => {
+        const cached = readOfflineCache<Service[]>(SERVICES_CACHE_KEY);
+        if (cached) {
+          setServices(cached.data);
+        }
+      });
+
+    return () => {
+      window.removeEventListener("online", syncNetworkState);
+      window.removeEventListener("offline", syncNetworkState);
+    };
   }, []);
 
   const searchCustomers = useCallback(async (q: string) => {
     if (q.length < 2) { setCustomers([]); return; }
-    const res = await fetch(`/api/customers?q=${encodeURIComponent(q)}&limit=5`);
-    const data = await res.json();
-    setCustomers(data.customers || []);
+    try {
+      const res = await fetch(`/api/customers?q=${encodeURIComponent(q)}&limit=5`);
+      if (!res.ok) throw new Error("customer-search-failed");
+      const data = await res.json();
+      setCustomers(data.customers || []);
+    } catch {
+      const cachedPages = [
+        readOfflineCache<{ customers: Customer[] }>("customers:page=1"),
+        readOfflineCache<{ customers: Customer[] }>("customers:q=&page=1"),
+      ];
+      const merged = cachedPages.flatMap((entry) => entry?.data.customers || []);
+      const filtered = merged.filter(
+        (customer, index, arr) =>
+          arr.findIndex((item) => item.id === customer.id) === index &&
+          (customer.name.toLowerCase().includes(q.toLowerCase()) || customer.phone.includes(q))
+      );
+      setCustomers(filtered.slice(0, 5));
+    }
   }, []);
 
   useEffect(() => {
@@ -113,48 +158,111 @@ export default function NewOrderPage() {
 
   const createCustomer = async () => {
     if (!newCustomerName || !newCustomerPhone) return;
-    const res = await fetch("/api/customers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newCustomerName, phone: newCustomerPhone }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setError(data.error || "Erreur"); return; }
-    setSelectedCustomer(data);
-    setShowNewCustomer(false);
-    setNewCustomerName("");
-    setNewCustomerPhone("");
+    setSyncMessage("");
+
+    const payload = { name: newCustomerName, phone: newCustomerPhone };
+    const queueCustomer = () => {
+      const tempId = createOfflineTempId("customer");
+      enqueueOfflineAction({
+        type: "CREATE_CUSTOMER",
+        request: {
+          url: "/api/customers",
+          method: "POST",
+          body: payload,
+        },
+        meta: { tempCustomerId: tempId },
+      });
+
+      setSelectedCustomer({ id: tempId, name: newCustomerName, phone: newCustomerPhone });
+      setShowNewCustomer(false);
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+      setSyncMessage("Client enregistre localement. Vous pouvez continuer la commande hors ligne.");
+    };
+
+    if (!navigator.onLine) {
+      queueCustomer();
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Erreur"); return; }
+      setSelectedCustomer(data);
+      setShowNewCustomer(false);
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+    } catch {
+      queueCustomer();
+    }
   };
 
   const submit = async () => {
     if (!selectedCustomer) { setError("Sélectionnez un client"); return; }
     if (cart.length === 0) { setError("Ajoutez au moins un article"); return; }
     setError("");
+    setSyncMessage("");
     setSubmitting(true);
+
+    const payload = {
+      customerId: selectedCustomer.id,
+      items: cart.map((i) => ({
+        serviceId: i.serviceId,
+        ...(i.pricingType === "PER_KG"
+          ? { weight: i.weight }
+          : { quantity: i.quantity }),
+      })),
+      notes: notes || undefined,
+      promisedAt: promisedAt || undefined,
+      advanceAmount: advanceAmount > 0 ? advanceAmount : undefined,
+      advanceMethod: advanceAmount > 0 ? advanceMethod : undefined,
+    };
+
+    const queueOrder = () => {
+      enqueueOfflineAction({
+        type: "CREATE_ORDER",
+        request: {
+          url: "/api/orders",
+          method: "POST",
+          body: payload,
+        },
+      });
+      setSelectedCustomer(null);
+      setCustomerSearch("");
+      setCustomers([]);
+      setCart([]);
+      setNotes("");
+      setPromisedAt("");
+      setAdvanceAmount(0);
+      setAdvanceMethod("CASH");
+      setSyncMessage("Commande enregistree hors ligne. Elle sera creee automatiquement des que la connexion reviendra.");
+    };
+
+    if (!navigator.onLine) {
+      queueOrder();
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerId: selectedCustomer.id,
-          items: cart.map((i) => ({
-            serviceId: i.serviceId,
-            ...(i.pricingType === "PER_KG"
-              ? { weight: i.weight }
-              : { quantity: i.quantity }),
-          })),
-          notes: notes || undefined,
-          promisedAt: promisedAt || undefined,
-          advanceAmount: advanceAmount > 0 ? advanceAmount : undefined,
-          advanceMethod: advanceAmount > 0 ? advanceMethod : undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erreur");
+      if (!res.ok) {
+        setError(data.error || "Erreur");
+        return;
+      }
       router.push(`/orders/${data.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur");
+    } catch {
+      queueOrder();
     } finally {
       setSubmitting(false);
     }
@@ -165,8 +273,14 @@ export default function NewOrderPage() {
 
   return (
     <div className="space-y-4">
+      {isOffline && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Mode hors ligne actif. Les services sont lus depuis le cache et les nouvelles actions seront placees en file d'attente.
+        </div>
+      )}
+
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Nouveau dépôt</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Nouveau dépôt</h1>
         <p className="text-sm text-gray-500 mt-0.5">Créer une nouvelle commande</p>
       </div>
 
@@ -174,7 +288,11 @@ export default function NewOrderPage() {
         <div className="bg-red-50 text-red-700 p-3 rounded-xl text-sm border border-red-100">{error}</div>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      {syncMessage && (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">{syncMessage}</div>
+      )}
+
+      <div className="grid lg:grid-cols-2 gap-4 lg:gap-6">
         {/* Left: Client + Services */}
         <div className="space-y-4">
           {/* Customer selection */}
@@ -252,7 +370,7 @@ export default function NewOrderPage() {
           {/* Quick items - big buttons */}
           <div className="card">
             <h2 className="font-semibold mb-3 flex items-center gap-2"><Sparkles className="w-4 h-4 text-amber-500" /> Articles rapides</h2>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
               {quickItems.map((s) => (
                 <button
                   key={s.id}
@@ -294,7 +412,7 @@ export default function NewOrderPage() {
 
         {/* Right: Cart + Total */}
         <div className="space-y-4">
-          <div className="card sticky top-4">
+          <div className="card lg:sticky lg:top-4">
             <h2 className="font-semibold mb-3 flex items-center gap-2"><ShoppingCart className="w-4 h-4 text-primary-600" /> Panier</h2>
 
             {cart.length === 0 ? (
@@ -373,7 +491,7 @@ export default function NewOrderPage() {
 
             {/* Total */}
             <div className="border-t pt-3 mt-3">
-              <div className="flex justify-between text-xl font-bold">
+              <div className="flex justify-between text-lg sm:text-xl font-bold">
                 <span>TOTAL</span>
                 <span className="text-primary-700">{formatFCFA(total)}</span>
               </div>
@@ -406,7 +524,7 @@ export default function NewOrderPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
                     <Banknote className="w-3.5 h-3.5" /> Avance (FCFA)

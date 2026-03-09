@@ -18,6 +18,8 @@ export async function GET(
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const isDuplicate = searchParams.get("duplicate") === "1";
+    const isDownload = searchParams.get("download") === "1";
+    const isPreview = searchParams.get("preview") === "1";
 
     const order = await prisma.order.findFirst({
       where: { id, tenantId: session.tenantId },
@@ -25,7 +27,16 @@ export async function GET(
         customer: true,
         items: true,
         tenant: {
-          select: { name: true, address: true, phone: true, logoUrl: true, waveNumber: true, omNumber: true },
+          select: {
+            name: true,
+            address: true,
+            phone: true,
+            logoUrl: true,
+            brandPrimaryColor: true,
+            brandAccentColor: true,
+            waveNumber: true,
+            omNumber: true,
+          },
         },
       },
     });
@@ -41,6 +52,9 @@ export async function GET(
 
     const receiptData = {
       tenantName: order.tenant.name,
+      tenantLogoUrl: order.tenant.logoUrl,
+      tenantPrimaryColor: order.tenant.brandPrimaryColor,
+      tenantAccentColor: order.tenant.brandAccentColor,
       tenantAddress: order.tenant.address,
       tenantPhone: order.tenant.phone,
       tenantWaveNumber: order.tenant.waveNumber,
@@ -72,21 +86,22 @@ export async function GET(
       React.createElement(ReceiptPDF, { data: receiptData }) as any
     );
 
-    // Audit: receipt print
-    await auditLog({
-      tenantId: session.tenantId,
-      userId: session.userId,
-      action: isDuplicate ? "RECEIPT_REPRINT" : "RECEIPT_PRINT",
-      entity: "Order",
-      entityId: order.id,
-      details: { code: order.code, isDuplicate },
-    });
+    if (!isPreview) {
+      await auditLog({
+        tenantId: session.tenantId,
+        userId: session.userId,
+        action: isDuplicate ? "RECEIPT_REPRINT" : "RECEIPT_PRINT",
+        entity: "Order",
+        entityId: order.id,
+        details: { code: order.code, isDuplicate },
+      });
+    }
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="recu-${order.code}.pdf"`,
+        "Content-Disposition": `${isDownload ? "attachment" : "inline"}; filename="recu-${order.code}.pdf"`,
         "Cache-Control": "no-store",
       },
     });

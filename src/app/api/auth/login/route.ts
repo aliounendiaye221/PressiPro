@@ -12,11 +12,16 @@ export async function POST(request: NextRequest) {
 
     const user = await prisma.user.findFirst({
       where: { email: data.email, active: true },
-      include: { tenant: { select: { id: true, name: true } } },
+      include: { tenant: { select: { id: true, name: true, active: true } } },
     });
 
     if (!user) {
       return errorResponse("Email ou mot de passe incorrect", 401);
+    }
+
+    // Block login if tenant is deactivated (except SUPER_ADMIN)
+    if (!user.tenant.active && user.role !== "SUPER_ADMIN") {
+      return errorResponse("Votre pressing a été désactivé. Contactez l'administrateur.", 403);
     }
 
     const validPw = await verifyPassword(data.password, user.password);

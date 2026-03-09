@@ -16,7 +16,9 @@ import {
   Smartphone,
   Wallet,
   ArrowUpRight,
+  WifiOff,
 } from "lucide-react";
+import { formatOfflineCacheTime, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 
 interface DashboardData {
   revenue: { day: number; week: number; month: number };
@@ -52,15 +54,52 @@ const METHOD_ICONS: Record<string, typeof Wallet> = {
   OTHER: Wallet,
 };
 
+const DASHBOARD_CACHE_KEY = "dashboard:summary";
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
+  const [usingCache, setUsingCache] = useState(false);
+  const [cacheUpdatedAt, setCacheUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then(setData)
-      .finally(() => setLoading(false));
+    setIsOffline(!navigator.onLine);
+
+    const syncNetworkState = () => setIsOffline(!navigator.onLine);
+    window.addEventListener("online", syncNetworkState);
+    window.addEventListener("offline", syncNetworkState);
+
+    const loadDashboard = async () => {
+      try {
+        const response = await fetch("/api/dashboard");
+        if (!response.ok) {
+          throw new Error("dashboard-fetch-failed");
+        }
+
+        const nextData = (await response.json()) as DashboardData;
+        setData(nextData);
+        setUsingCache(false);
+        setCacheUpdatedAt(new Date().toISOString());
+        writeOfflineCache(DASHBOARD_CACHE_KEY, nextData);
+      } catch {
+        const cached = readOfflineCache<DashboardData>(DASHBOARD_CACHE_KEY);
+        if (cached) {
+          setData(cached.data);
+          setUsingCache(true);
+          setCacheUpdatedAt(cached.updatedAt);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboard();
+
+    return () => {
+      window.removeEventListener("online", syncNetworkState);
+      window.removeEventListener("offline", syncNetworkState);
+    };
   }, []);
 
   if (loading) {
@@ -85,16 +124,26 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {(isOffline || usingCache) && data && (
+        <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          <span>
+            Affichage hors ligne a partir des dernieres donnees synchronisees
+            {formatOfflineCacheTime(cacheUpdatedAt) ? ` le ${formatOfflineCacheTime(cacheUpdatedAt)}` : ""}.
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Tableau de bord</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Tableau de bord</h1>
         <p className="text-sm text-gray-500 mt-1">
           Vue d&apos;ensemble de votre activité
         </p>
       </div>
 
       {/* Revenue KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="stat-card relative overflow-hidden">
           <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-emerald-100 to-transparent rounded-bl-[40px] opacity-60" />
           <div className="relative">
@@ -102,9 +151,9 @@ export default function DashboardPage() {
               <div className="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center">
                 <TrendingUp className="w-[18px] h-[18px] text-emerald-600" />
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">CA Jour</span>
+              <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-gray-400">CA Jour</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{formatFCFA(data.revenue.day)}</p>
+            <p className="text-lg sm:text-2xl font-bold text-gray-900">{formatFCFA(data.revenue.day)}</p>
           </div>
         </div>
 
@@ -115,9 +164,9 @@ export default function DashboardPage() {
               <div className="w-9 h-9 bg-primary-100 rounded-xl flex items-center justify-center">
                 <CalendarDays className="w-[18px] h-[18px] text-primary-600" />
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">CA Semaine</span>
+              <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-gray-400">CA Semaine</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{formatFCFA(data.revenue.week)}</p>
+            <p className="text-lg sm:text-2xl font-bold text-gray-900">{formatFCFA(data.revenue.week)}</p>
           </div>
         </div>
 
@@ -128,9 +177,9 @@ export default function DashboardPage() {
               <div className="w-9 h-9 bg-violet-100 rounded-xl flex items-center justify-center">
                 <Calendar className="w-[18px] h-[18px] text-violet-600" />
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">CA Mois</span>
+              <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-gray-400">CA Mois</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{formatFCFA(data.revenue.month)}</p>
+            <p className="text-lg sm:text-2xl font-bold text-gray-900">{formatFCFA(data.revenue.month)}</p>
           </div>
         </div>
 
@@ -141,30 +190,30 @@ export default function DashboardPage() {
               <div className="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center">
                 <AlertTriangle className="w-[18px] h-[18px] text-red-500" />
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Impayés</span>
+              <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-gray-400">Impayés</span>
             </div>
-            <p className="text-2xl font-bold text-red-600">{formatFCFA(data.totalUnpaid)}</p>
+            <p className="text-lg sm:text-2xl font-bold text-red-600">{formatFCFA(data.totalUnpaid)}</p>
           </div>
         </div>
       </div>
 
       {/* Status grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
         {statusConfig.map(({ key, label, icon: Icon, bg, text }) => (
           <div key={key} className="stat-card text-center">
-            <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center mx-auto mb-2`}>
-              <Icon className={`w-5 h-5 ${text}`} />
+            <div className={`w-8 h-8 sm:w-10 sm:h-10 ${bg} rounded-xl flex items-center justify-center mx-auto mb-1 sm:mb-2`}>
+              <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${text}`} />
             </div>
-            <p className="text-3xl font-bold text-gray-900">{data.ordersByStatus[key] || 0}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+            <p className="text-xl sm:text-3xl font-bold text-gray-900">{data.ordersByStatus[key] || 0}</p>
+            <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5">{label}</p>
           </div>
         ))}
         <div className="stat-card text-center">
-          <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center mx-auto mb-2">
-            <AlertTriangle className="w-5 h-5 text-red-500" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-red-50 rounded-xl flex items-center justify-center mx-auto mb-1 sm:mb-2">
+            <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" />
           </div>
-          <p className="text-3xl font-bold text-red-600">{data.lateOrders}</p>
-          <p className="text-xs text-gray-500 mt-0.5">En retard</p>
+          <p className="text-xl sm:text-3xl font-bold text-red-600">{data.lateOrders}</p>
+          <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5">En retard</p>
         </div>
       </div>
 
@@ -175,7 +224,7 @@ export default function DashboardPage() {
             <Banknote className="w-5 h-5 text-gray-400" />
             <h2 className="text-lg font-semibold text-gray-900">Paiements du jour</h2>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
             {data.paymentsByMethod.map((p) => {
               const Icon = METHOD_ICONS[p.method] || Wallet;
               return (
@@ -203,8 +252,8 @@ export default function DashboardPage() {
             <p className="text-gray-400 text-sm">Aucun paiement récent</p>
           </div>
         ) : (
-          <div className="overflow-x-auto -mx-6">
-            <table className="min-w-full">
+          <div className="overflow-x-auto -mx-4 sm:-mx-6">
+            <table className="min-w-[560px] w-full">
               <thead>
                 <tr className="border-b border-gray-100">
                   <th className="py-3 px-6 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Commande</th>

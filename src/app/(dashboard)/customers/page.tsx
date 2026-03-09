@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Search, UserPlus, Users, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, UserPlus, Users, ChevronLeft, ChevronRight, WifiOff } from "lucide-react";
+import { formatOfflineCacheTime, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
+import { createOfflineTempId, enqueueOfflineAction } from "@/lib/offline-queue";
 
 interface Customer {
   id: string;
@@ -18,24 +20,62 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [isOffline, setIsOffline] = useState(false);
+  const [usingCache, setUsingCache] = useState(false);
+  const [cacheUpdatedAt, setCacheUpdatedAt] = useState<string | null>(null);
 
   // New customer form
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newError, setNewError] = useState("");
+  const [syncMessage, setSyncMessage] = useState("");
+
+  useEffect(() => {
+    setIsOffline(!navigator.onLine);
+    const syncNetworkState = () => setIsOffline(!navigator.onLine);
+    window.addEventListener("online", syncNetworkState);
+    window.addEventListener("offline", syncNetworkState);
+
+    return () => {
+      window.removeEventListener("online", syncNetworkState);
+      window.removeEventListener("offline", syncNetworkState);
+    };
+  }, []);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set("q", search);
     params.set("page", String(page));
+    const cacheKey = `customers:${params.toString()}`;
 
-    const res = await fetch(`/api/customers?${params}`);
-    const data = await res.json();
-    setCustomers(data.customers || []);
-    setTotal(data.total || 0);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/customers?${params}`);
+      if (!res.ok) {
+        throw new Error("customers-fetch-failed");
+      }
+
+      const data = await res.json();
+      setCustomers(data.customers || []);
+      setTotal(data.total || 0);
+      setUsingCache(false);
+      setCacheUpdatedAt(new Date().toISOString());
+      writeOfflineCache(cacheKey, { customers: data.customers || [], total: data.total || 0 });
+    } catch {
+      const cached = readOfflineCache<{ customers: Customer[]; total: number }>(cacheKey);
+      if (cached) {
+        setCustomers(cached.data.customers || []);
+        setTotal(cached.data.total || 0);
+        setUsingCache(true);
+        setCacheUpdatedAt(cached.updatedAt);
+      } else {
+        setCustomers([]);
+        setTotal(0);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, [search, page]);
 
   useEffect(() => {
@@ -45,24 +85,77 @@ export default function CustomersPage() {
 
   const createCustomer = async () => {
     setNewError("");
-    const res = await fetch("/api/customers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName, phone: newPhone }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setNewError(data.error); return; }
-    setShowNew(false);
-    setNewName("");
-    setNewPhone("");
-    fetchCustomers();
+    setSyncMessage("");
+
+    const payload = { name: newName, phone: newPhone };
+    const queueCustomer = () => {
+      const tempId = createOfflineTempId("customer");
+      enqueueOfflineAction({
+        type: "CREATE_CUSTOMER",
+        request: {
+          url: "/api/customers",
+          method: "POST",
+          body: payload,
+        },
+        meta: { tempCustomerId: tempId },
+      });
+
+      setCustomers((prev) => [
+        {
+          id: tempId,
+          name: newName,
+          phone: newPhone,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setTotal((prev) => prev + 1);
+      setShowNew(false);
+      setNewName("");
+      setNewPhone("");
+      setSyncMessage("Client enregistre hors ligne. Il sera synchronise des le retour de la connexion.");
+    };
+
+    if (!navigator.onLine) {
+      queueCustomer();
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNewError(data.error);
+        return;
+      }
+      setShowNew(false);
+      setNewName("");
+      setNewPhone("");
+      fetchCustomers();
+    } catch {
+      queueCustomer();
+    }
   };
 
   return (
     <div className="space-y-6">
+      {(isOffline || usingCache) && (
+        <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          <span>
+            Clients charges depuis le cache local
+            {formatOfflineCacheTime(cacheUpdatedAt) ? ` du ${formatOfflineCacheTime(cacheUpdatedAt)}` : ""}.
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Clients</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} client{total > 1 ? "s" : ""} enregistré{total > 1 ? "s" : ""}</p>
         </div>
         <button className="btn-primary" onClick={() => setShowNew(true)}>
@@ -74,7 +167,7 @@ export default function CustomersPage() {
         <div className="card space-y-3">
           <h2 className="font-semibold">Nouveau client</h2>
           {newError && <p className="text-red-500 text-sm">{newError}</p>}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input placeholder="Nom *" className="input-field" value={newName} onChange={(e) => setNewName(e.target.value)} />
             <input placeholder="+221 7X XXX XX XX *" className="input-field" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
           </div>
@@ -82,6 +175,12 @@ export default function CustomersPage() {
             <button className="btn-primary text-xs" onClick={createCustomer}>Créer</button>
             <button className="btn-secondary text-xs" onClick={() => setShowNew(false)}>Annuler</button>
           </div>
+        </div>
+      )}
+
+      {syncMessage && (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          {syncMessage}
         </div>
       )}
 

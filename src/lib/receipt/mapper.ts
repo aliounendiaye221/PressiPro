@@ -1,6 +1,9 @@
 export interface ReceiptData {
   // Tenant
   tenantName: string;
+  tenantLogoUrl?: string | null;
+  tenantPrimaryColor?: string | null;
+  tenantAccentColor?: string | null;
   tenantAddress?: string | null;
   tenantPhone?: string | null;
   tenantWaveNumber?: string | null;

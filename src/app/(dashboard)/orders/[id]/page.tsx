@@ -53,7 +53,7 @@ interface OrderDetail {
 const ORDER_DETAIL_CACHE_KEY_PREFIX = "order-detail:";
 
 function formatFCFA(n: number) {
-  return new Intl.NumberFormat("fr-SN").format(n) + " F";
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " F";
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -89,9 +89,17 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 function buildWhatsAppUrl(phone: string, message: string) {
-  const cleaned = phone.replace(/\s/g, "");
-  const num = cleaned.startsWith("+") ? cleaned : `+221${cleaned}`;
-  return `https://wa.me/${num.replace("+", "")}?text=${encodeURIComponent(message)}`;
+  let cleaned = phone.replace(/[\s\-().]/g, "");
+  if (cleaned.startsWith("+")) {
+    cleaned = cleaned.slice(1);
+  } else if (cleaned.startsWith("00")) {
+    cleaned = cleaned.slice(2);
+  } else if (cleaned.startsWith("0")) {
+    cleaned = "221" + cleaned.slice(1);
+  } else if (!cleaned.startsWith("221")) {
+    cleaned = "221" + cleaned;
+  }
+  return `https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`;
 }
 
 export default function OrderDetailPage() {
@@ -544,15 +552,7 @@ export default function OrderDetailPage() {
   const isLate = order.promisedAt && new Date(order.promisedAt) < new Date() && order.status !== "LIVRE";
   const nextStatus = NEXT_STATUS[order.status];
   const nextAction = nextStatus ? STATUS_ACTIONS[order.status] : null;
-  const receiptPreviewSrc = `/api/orders/${order.id}/receipt.pdf?preview=1&v=${encodeURIComponent([
-    order.status,
-    order.totalAmount,
-    order.paidAmount,
-    order.promisedAt || "none",
-    order.notes?.length || 0,
-    order.payments.length,
-    order.statusHistory.length,
-  ].join("-"))}`;
+
 
   // WhatsApp messages (sans lien PDF - l'admin télécharge et joint le PDF manuellement)
   const receiptMsg = `Bonjour ${order.customer.name},\n\nVotre dépôt *${order.code}* au pressing a été enregistré.\nTotal: ${formatFCFA(order.totalAmount)}\nAvance: ${formatFCFA(order.paidAmount)}\nReste: ${formatFCFA(amountDue)}\n\n📄 Votre facture est jointe à ce message.\n\nMerci de votre confiance !`;
@@ -819,31 +819,7 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          <div className="card space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="font-semibold text-gray-900">Aperçu du reçu</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Prévisualisation directe du PDF avant impression ou partage.</p>
-              </div>
-              <a
-                href={receiptPreviewSrc}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs font-medium text-primary-600 hover:text-primary-700"
-              >
-                Ouvrir en plein écran
-              </a>
-            </div>
 
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-100">
-              <iframe
-                key={receiptPreviewSrc}
-                src={receiptPreviewSrc}
-                title={`Aperçu du reçu ${order.code}`}
-                className="h-[34rem] w-full bg-white"
-              />
-            </div>
-          </div>
         </div>
 
         {/* Right column: actions */}

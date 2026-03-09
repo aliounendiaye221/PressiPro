@@ -41,7 +41,7 @@ const SERVICES_CACHE_KEY = "settings:services";
 const USERS_CACHE_KEY = "settings:users";
 
 function formatFCFA(n: number) {
-  return new Intl.NumberFormat("fr-SN").format(n) + " F";
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " F";
 }
 
 export default function SettingsPage() {

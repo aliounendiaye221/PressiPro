@@ -44,10 +44,9 @@ export interface ReceiptData {
 }
 
 export function formatFCFA(amount: number): string {
-  return new Intl.NumberFormat("fr-SN", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-  }).format(amount) + " FCFA";
+  const str = Math.round(amount).toString();
+  const formatted = str.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return formatted + " FCFA";
 }
 
 export function formatDate(dateStr: string): string {

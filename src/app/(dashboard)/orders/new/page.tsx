@@ -33,7 +33,7 @@ interface CartItem {
 const SERVICES_CACHE_KEY = "services:catalog";
 
 function formatFCFA(n: number) {
-  return new Intl.NumberFormat("fr-SN").format(n) + " F";
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " F";
 }
 
 export default function NewOrderPage() {

@@ -37,7 +37,7 @@ interface DashboardData {
 }
 
 function formatFCFA(n: number) {
-  return new Intl.NumberFormat("fr-SN").format(n) + " F";
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " F";
 }
 
 const METHOD_LABELS: Record<string, string> = {

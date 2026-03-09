@@ -46,17 +46,17 @@ function isHexColor(value?: string | null) {
 
 const styles = StyleSheet.create({
   page: {
-    padding: 12,
+    padding: 10,
     paddingTop: 0,
-    fontSize: 8.5,
+    fontSize: 8,
     fontFamily: "Helvetica",
     width: "80mm",
     backgroundColor: "#ffffff",
   },
   topBand: {
-    height: 10,
-    marginHorizontal: -12,
-    marginBottom: 8,
+    height: 6,
+    marginHorizontal: -10,
+    marginBottom: 6,
   },
   duplicate: {
     textAlign: "center",
@@ -72,33 +72,33 @@ const styles = StyleSheet.create({
   },
   brandShell: {
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 8,
+    borderRadius: 10,
+    padding: 8,
+    marginBottom: 6,
   },
   brandRow: {
     flexDirection: "row",
     alignItems: "center",
   },
   logo: {
-    width: 44,
-    height: 44,
-    marginRight: 8,
+    width: 36,
+    height: 36,
+    marginRight: 6,
     objectFit: "cover",
-    borderRadius: 10,
+    borderRadius: 8,
   },
   logoFallback: {
-    width: 44,
-    height: 44,
-    marginRight: 8,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    marginRight: 6,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
   },
   logoFallbackText: {
     color: "#ffffff",
     fontFamily: "Helvetica-Bold",
-    fontSize: 16,
+    fontSize: 14,
   },
   brandText: {
     flex: 1,
@@ -110,9 +110,9 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   tenantName: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: "Helvetica-Bold",
-    marginBottom: 3,
+    marginBottom: 2,
   },
   tenantInfo: {
     fontSize: 7,
@@ -137,13 +137,13 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
   },
   metaGrid: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   metaCard: {
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 7,
-    marginBottom: 5,
+    borderRadius: 8,
+    padding: 5,
+    marginBottom: 4,
   },
   metaLabel: {
     fontSize: 6.8,
@@ -165,9 +165,9 @@ const styles = StyleSheet.create({
   sectionCard: {
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 8,
+    borderRadius: 10,
+    padding: 6,
+    marginBottom: 6,
   },
   sectionTitle: {
     fontSize: 7,
@@ -197,9 +197,9 @@ const styles = StyleSheet.create({
   itemSection: {
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 8,
+    borderRadius: 10,
+    padding: 6,
+    marginBottom: 6,
   },
   itemHeader: {
     flexDirection: "row",
@@ -235,9 +235,9 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 8,
+    borderRadius: 10,
+    padding: 6,
+    marginBottom: 6,
   },
   summaryRow: {
     flexDirection: "row",
@@ -264,25 +264,25 @@ const styles = StyleSheet.create({
   },
   badge: {
     textAlign: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    marginBottom: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    marginBottom: 6,
     fontFamily: "Helvetica-Bold",
-    fontSize: 10,
-    borderRadius: 10,
+    fontSize: 9,
+    borderRadius: 8,
     borderWidth: 1,
   },
   qrContainer: {
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    borderRadius: 12,
-    paddingVertical: 8,
+    borderRadius: 10,
+    paddingVertical: 6,
   },
   qrImage: {
-    width: 74,
-    height: 74,
+    width: 60,
+    height: 60,
   },
   qrHint: {
     marginTop: 4,
@@ -292,9 +292,9 @@ const styles = StyleSheet.create({
   },
   paymentBox: {
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 8,
+    borderRadius: 10,
+    padding: 6,
+    marginBottom: 6,
   },
   paymentTitle: {
     textAlign: "center",
@@ -341,7 +341,7 @@ export function ReceiptPDF({ data }: { data: ReceiptData }) {
 
   return (
     <Document>
-      <Page size={[226.77, 680]} style={styles.page}>
+      <Page size={[226.77, 1200]} style={styles.page}>
         <View style={[styles.topBand, { backgroundColor: brand.solid }]} />
 
         {data.isDuplicate && (

@@ -1,8 +1,9 @@
 {
-  "name": "PressiPro - Gestion de Pressing",
+  "name": "PressiPro — Gestion de Pressing au Sénégal",
   "short_name": "PressiPro",
-  "description": "SaaS de gestion de pressing",
+  "description": "Logiciel SaaS de gestion de pressing. Commandes, paiements Wave/OM, reçus PDF, dashboard temps réel.",
   "start_url": "/",
+  "id": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],

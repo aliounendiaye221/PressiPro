@@ -208,7 +208,7 @@ export default function LandingPage() {
                 <div className="w-3 h-3 rounded-full bg-red-400" />
                 <div className="w-3 h-3 rounded-full bg-amber-400" />
                 <div className="w-3 h-3 rounded-full bg-green-400" />
-                <span className="text-xs text-gray-400 ml-2">app.pressipro.sn</span>
+                <span className="text-xs text-gray-400 ml-2">pressipro.tech</span>
               </div>
               <div className="bg-gradient-to-br from-gray-50 to-white p-6 sm:p-10 min-h-[300px] lg:min-h-[420px]">
                 {/* Simulated dashboard */}

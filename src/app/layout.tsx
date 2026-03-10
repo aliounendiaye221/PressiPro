@@ -82,7 +82,7 @@ export const metadata: Metadata = {
     ],
   },
   verification: {
-    google: "googleecd6b880cc8a2124",
+    google: "36nalHnnkewRw68pm_BZP45Oav-__raYpWBQEbB01I4",
   },
   category: "business",
 };

@@ -11,11 +11,17 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow manifest, icons, SW
+  // Allow manifest, icons, SW, static verification/SEO files
   if (
     pathname.startsWith("/manifest") ||
     pathname.startsWith("/icon-") ||
     pathname.startsWith("/sw.js") ||
+    pathname.startsWith("/sitemap") ||
+    pathname.startsWith("/robots") ||
+    pathname.startsWith("/opengraph-image") ||
+    pathname.endsWith(".html") ||
+    pathname.endsWith(".xml") ||
+    pathname.endsWith(".txt") ||
     pathname === "/"
   ) {
     return NextResponse.next();

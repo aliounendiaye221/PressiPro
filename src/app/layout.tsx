@@ -82,7 +82,7 @@ export const metadata: Metadata = {
     ],
   },
   verification: {
-    google: "GOOGLE_SITE_VERIFICATION",
+    google: "googleecd6b880cc8a2124",
   },
   category: "business",
 };

@@ -573,6 +573,7 @@ export default function OrderDetailPage() {
 
   const buildWhatsAppMessage = (kind: "receipt" | "ready", receiptShareUrl: string) => {
     const customerName = order.customer.name;
+    const safeReceiptUrl = receiptShareUrl.trim().replace(/\s+/g, "");
     const lines: string[] = [];
 
     lines.push(`Bonjour ${customerName},`);
@@ -597,7 +598,7 @@ export default function OrderDetailPage() {
 
     lines.push("");
     lines.push("📄 Reçu sécurisé:");
-    lines.push(receiptShareUrl);
+    lines.push(safeReceiptUrl);
     lines.push("");
     lines.push("Le lien permet d'ouvrir et de télécharger le reçu directement.");
     lines.push("");

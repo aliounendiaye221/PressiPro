@@ -29,288 +29,186 @@ function getBrandPalette(tenantName: string) {
   return BRAND_PALETTES[hash % BRAND_PALETTES.length];
 }
 
-function getTenantInitials(tenantName: string) {
-  const initials = tenantName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-
-  return initials || "PP";
-}
-
 function isHexColor(value?: string | null) {
   return Boolean(value && /^#(?:[0-9a-fA-F]{6})$/.test(value));
 }
 
 const styles = StyleSheet.create({
   page: {
-    padding: 10,
-    paddingTop: 0,
-    fontSize: 8,
+    padding: 12,
+    fontSize: 9,
     fontFamily: "Helvetica",
     width: "80mm",
     backgroundColor: "#ffffff",
+    color: "#000000",
   },
   topBand: {
-    height: 6,
-    marginHorizontal: -10,
-    marginBottom: 6,
-  },
-  duplicate: {
-    textAlign: "center",
-    fontSize: 10,
-    fontFamily: "Helvetica-Bold",
-    color: "#b91c1c",
+    height: 4,
+    marginHorizontal: -12,
+    marginTop: -12,
     marginBottom: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: "#fca5a5",
-    backgroundColor: "#fef2f2",
-    borderRadius: 8,
   },
-  brandShell: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 8,
-    marginBottom: 6,
-  },
-  brandRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  logo: {
-    width: 36,
-    height: 36,
-    marginRight: 6,
-    objectFit: "cover",
-    borderRadius: 8,
-  },
-  logoFallback: {
-    width: 36,
-    height: 36,
-    marginRight: 6,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  logoFallbackText: {
-    color: "#ffffff",
-    fontFamily: "Helvetica-Bold",
-    fontSize: 14,
-  },
-  brandText: {
-    flex: 1,
-  },
-  eyebrow: {
-    fontSize: 6.8,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 2,
-  },
-  tenantName: {
+  duplicateText: {
+    textAlign: "center",
     fontSize: 12,
     fontFamily: "Helvetica-Bold",
+    color: "#000000",
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#000000",
+    borderTopWidth: 1,
+    borderTopColor: "#000000",
+    paddingVertical: 2,
+  },
+  header: {
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  logo: {
+    width: 45,
+    height: 45,
+    marginBottom: 4,
+    objectFit: "contain",
+  },
+  tenantName: {
+    fontSize: 14,
+    fontFamily: "Helvetica-Bold",
+    textAlign: "center",
     marginBottom: 2,
+    textTransform: "uppercase",
   },
   tenantInfo: {
-    fontSize: 7,
-    color: "#475569",
-    marginBottom: 1,
-  },
-  receiptTitleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  receiptTitle: {
     fontSize: 8,
-    fontFamily: "Helvetica-Bold",
-  },
-  receiptChip: {
-    fontSize: 6.8,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: 999,
-    fontFamily: "Helvetica-Bold",
-  },
-  metaGrid: {
-    marginBottom: 6,
-  },
-  metaCard: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 5,
-    marginBottom: 4,
-  },
-  metaLabel: {
-    fontSize: 6.8,
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-    color: "#64748b",
+    textAlign: "center",
+    color: "#333333",
     marginBottom: 2,
   },
-  metaValue: {
-    fontSize: 9,
+  title: {
+    fontSize: 12,
     fontFamily: "Helvetica-Bold",
-    color: "#0f172a",
+    textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginVertical: 4,
   },
-  divider: {
+  dividerDashed: {
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#000000",
+    borderBottomStyle: "dashed",
     marginVertical: 6,
   },
-  sectionCard: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 10,
-    padding: 6,
-    marginBottom: 6,
-  },
-  sectionTitle: {
-    fontSize: 7,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: "#64748b",
-    fontFamily: "Helvetica-Bold",
-    marginBottom: 6,
+  dividerSolid: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#000000",
+    borderBottomStyle: "solid",
+    marginVertical: 6,
   },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   label: {
-    fontFamily: "Helvetica-Bold",
     fontSize: 8,
-    color: "#0f172a",
+    color: "#555555",
   },
   value: {
     fontSize: 8,
-    color: "#334155",
+    fontFamily: "Helvetica-Bold",
     textAlign: "right",
-    maxWidth: "62%",
+    maxWidth: "65%",
   },
-  itemSection: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 10,
-    padding: 6,
-    marginBottom: 6,
-  },
-  itemHeader: {
+  tableHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: "#cbd5e1",
-    paddingBottom: 4,
+    borderBottomColor: "#000000",
+    paddingBottom: 2,
+    marginBottom: 4,
   },
+  colArticle: { flex: 2, fontSize: 8, fontFamily: "Helvetica-Bold" },
+  colQty: { flex: 0.8, fontSize: 8, fontFamily: "Helvetica-Bold", textAlign: "center" },
+  colTotal: { flex: 1.2, fontSize: 8, fontFamily: "Helvetica-Bold", textAlign: "right" },
   itemRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  itemName: {
-    flex: 2,
-    fontSize: 8,
-    color: "#0f172a",
-  },
-  itemQty: {
-    flex: 0.5,
-    fontSize: 8,
-    textAlign: "center",
-    color: "#334155",
-  },
-  itemPrice: {
-    flex: 1,
-    fontSize: 8,
-    textAlign: "right",
-    color: "#0f172a",
-  },
-  summaryCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 6,
-    marginBottom: 6,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
     marginBottom: 4,
+  },
+  itemArticle: { flex: 2, fontSize: 8 },
+  itemQty: { flex: 0.8, fontSize: 8, textAlign: "center" },
+  itemTotal: { flex: 1.2, fontSize: 8, textAlign: "right" },
+  totalsContainer: {
+    marginTop: 4,
+    width: "100%",
   },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 4,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: "#cbd5e1",
+    marginBottom: 3,
   },
   totalLabel: {
-    fontFamily: "Helvetica-Bold",
-    fontSize: 10,
-    color: "#0f172a",
+    fontSize: 9,
   },
   totalValue: {
-    fontFamily: "Helvetica-Bold",
-    fontSize: 10,
-    color: "#0f172a",
-  },
-  badge: {
-    textAlign: "center",
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    marginBottom: 6,
-    fontFamily: "Helvetica-Bold",
     fontSize: 9,
-    borderRadius: 8,
-    borderWidth: 1,
+    fontFamily: "Helvetica-Bold",
+  },
+  grandTotalLabel: {
+    fontSize: 12,
+    fontFamily: "Helvetica-Bold",
+  },
+  grandTotalValue: {
+    fontSize: 12,
+    fontFamily: "Helvetica-Bold",
+  },
+  paymentStatus: {
+    fontSize: 13,
+    fontFamily: "Helvetica-Bold",
+    textAlign: "center",
+    marginVertical: 6,
+    paddingVertical: 4,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#000000",
+    textTransform: "uppercase",
   },
   qrContainer: {
     alignItems: "center",
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 10,
-    paddingVertical: 6,
-  },
-  qrImage: {
-    width: 60,
-    height: 60,
-  },
-  qrHint: {
-    marginTop: 4,
-    textAlign: "center",
-    fontSize: 6.8,
-    color: "#64748b",
-  },
-  paymentBox: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 6,
-    marginBottom: 6,
-  },
-  paymentTitle: {
-    textAlign: "center",
-    fontFamily: "Helvetica-Bold",
-    fontSize: 8,
+    marginTop: 8,
     marginBottom: 4,
   },
-  paymentLine: {
+  qrImage: {
+    width: 65,
+    height: 65,
+  },
+  qrHint: {
+    fontSize: 7,
+    color: "#555555",
+    marginTop: 2,
     textAlign: "center",
-    fontSize: 7.2,
+  },
+  paymentInfo: {
+    marginTop: 6,
+    padding: 6,
+    borderWidth: 1,
+    borderColor: "#000000",
+    borderStyle: "dashed",
+    borderRadius: 4,
+  },
+  paymentInfoTitle: {
+    fontSize: 8,
+    fontFamily: "Helvetica-Bold",
+    textAlign: "center",
     marginBottom: 2,
   },
-  footer: {
+  paymentInfoLine: {
+    fontSize: 8,
     textAlign: "center",
-    fontSize: 7,
-    color: "#475569",
+  },
+  footer: {
+    fontSize: 8,
+    textAlign: "center",
+    color: "#333333",
+    marginTop: 8,
     lineHeight: 1.4,
   },
 });
@@ -318,144 +216,142 @@ const styles = StyleSheet.create({
 export function ReceiptPDF({ data }: { data: ReceiptData }) {
   const badgeText =
     data.paymentStatus === "PAYE"
-      ? "PAYE"
+      ? "PAYÉ"
       : data.paymentStatus === "PARTIEL"
-        ? "PARTIEL"
-        : "IMPAYE";
+        ? "PAIEMENT PARTIEL"
+        : "NON PAYÉ";
 
   const fallbackBrand = getBrandPalette(data.tenantName);
   const brand = {
-    solid: isHexColor(data.tenantPrimaryColor)
-      ? data.tenantPrimaryColor!
-      : fallbackBrand.solid,
-    soft: isHexColor(data.tenantAccentColor)
-      ? data.tenantAccentColor!
-      : fallbackBrand.soft,
-    border: isHexColor(data.tenantAccentColor)
-      ? data.tenantAccentColor!
-      : fallbackBrand.border,
-    ink: fallbackBrand.ink,
+    solid: isHexColor(data.tenantPrimaryColor) ? data.tenantPrimaryColor! : fallbackBrand.solid,
+    soft: isHexColor(data.tenantAccentColor) ? data.tenantAccentColor! : fallbackBrand.soft,
+    ink: isHexColor(data.tenantPrimaryColor) ? data.tenantPrimaryColor! : fallbackBrand.ink,
   };
   const paymentTheme = PAYMENT_THEME[data.paymentStatus];
-  const tenantInitials = getTenantInitials(data.tenantName);
+
+  // Dynamically calculate the perfect height for the receipt based on elements present
+  const baseHeight = 390; // Approx sum of padding, fixed headers, footers, totals, separators
+  const itemsHeight = data.items.length * 16;
+  const duplicateHeight = data.isDuplicate ? 26 : 0;
+  const paymentInfoHeight =
+    (data.tenantWaveNumber || data.tenantOmNumber) && data.amountDue > 0 ? 50 : 0;
+  const qrHeight = data.qrDataUrl ? 90 : 0;
+  const dynamicHeight =
+    baseHeight + itemsHeight + duplicateHeight + paymentInfoHeight + qrHeight;
 
   return (
     <Document>
-      <Page size={[226.77, 1200]} style={styles.page}>
+      <Page size={[226.77, dynamicHeight]} style={styles.page}>
         <View style={[styles.topBand, { backgroundColor: brand.solid }]} />
 
         {data.isDuplicate && (
-          <Text style={styles.duplicate}>*** DUPLICATA ***</Text>
+          <Text style={styles.duplicateText}>DUPLICATA</Text>
         )}
 
-        <View style={[styles.brandShell, { backgroundColor: brand.soft, borderColor: brand.border }]}>
-          <View style={styles.brandRow}>
-            {data.tenantLogoUrl ? (
-              <Image src={data.tenantLogoUrl} style={styles.logo} />
-            ) : (
-              <View style={[styles.logoFallback, { backgroundColor: brand.solid }]}>
-                <Text style={styles.logoFallbackText}>{tenantInitials}</Text>
-              </View>
-            )}
-
-            <View style={styles.brandText}>
-              <Text style={[styles.eyebrow, { color: brand.ink }]}>Identité pressing</Text>
-              <Text style={styles.tenantName}>{data.tenantName}</Text>
-              {data.tenantAddress && (
-                <Text style={styles.tenantInfo}>{data.tenantAddress}</Text>
-              )}
-              {data.tenantPhone && (
-                <Text style={styles.tenantInfo}>Tél: {data.tenantPhone}</Text>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.receiptTitleRow}>
-            <Text style={[styles.receiptTitle, { color: brand.ink }]}>Reçu de dépôt</Text>
-            <Text style={[styles.receiptChip, { backgroundColor: "#ffffff", color: brand.solid }]}>Original</Text>
-          </View>
-        </View>
-
-        <View style={styles.metaGrid}>
-          <View style={[styles.metaCard, { backgroundColor: "#ffffff", borderColor: brand.border }]}>
-            <Text style={styles.metaLabel}>Code commande</Text>
-            <Text style={styles.metaValue}>{data.orderCode}</Text>
-          </View>
-          <View style={[styles.metaCard, { backgroundColor: "#ffffff", borderColor: "#e2e8f0" }]}>
-            <Text style={styles.metaLabel}>Déposé le</Text>
-            <Text style={styles.metaValue}>{data.orderDate}</Text>
-          </View>
-          {data.promisedDate && (
-            <View style={[styles.metaCard, { backgroundColor: brand.soft, borderColor: brand.border }]}>
-              <Text style={styles.metaLabel}>Prêt le</Text>
-              <Text style={styles.metaValue}>{data.promisedDate}</Text>
-            </View>
+        <View style={styles.header}>
+          {data.tenantLogoUrl && (
+            <Image src={data.tenantLogoUrl} style={styles.logo} />
+          )}
+          <Text style={[styles.tenantName, { color: brand.ink }]}>{data.tenantName}</Text>
+          {data.tenantAddress && (
+            <Text style={styles.tenantInfo}>{data.tenantAddress}</Text>
+          )}
+          {data.tenantPhone && (
+            <Text style={styles.tenantInfo}>Tél: {data.tenantPhone}</Text>
           )}
         </View>
 
-        <View style={[styles.sectionCard, { backgroundColor: "#ffffff" }]}>
-          <Text style={styles.sectionTitle}>Client</Text>
+        <Text style={[styles.title, { color: brand.solid }]}>Reçu de dépôt</Text>
+
+        <View style={[styles.dividerDashed, { borderBottomColor: brand.solid, opacity: 0.5 }]} />
+
+        <View style={styles.row}>
+          <Text style={styles.label}>N° Commande:</Text>
+          <Text style={styles.value}>{data.orderCode}</Text>
+        </View>
+        <View style={styles.row}>
+          <Text style={styles.label}>Date:</Text>
+          <Text style={styles.value}>{data.orderDate}</Text>
+        </View>
+        {data.promisedDate && (
           <View style={styles.row}>
-            <Text style={styles.label}>Nom</Text>
-            <Text style={styles.value}>{data.customerName}</Text>
+            <Text style={styles.label}>Prêt le:</Text>
+            <Text style={styles.value}>{data.promisedDate}</Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Téléphone</Text>
-            <Text style={styles.value}>{data.customerPhone}</Text>
-          </View>
+        )}
+
+        <View style={styles.dividerSolid} />
+
+        <View style={styles.row}>
+          <Text style={styles.label}>Client:</Text>
+          <Text style={styles.value}>{data.customerName}</Text>
+        </View>
+        <View style={styles.row}>
+          <Text style={styles.label}>Contact:</Text>
+          <Text style={styles.value}>{data.customerPhone}</Text>
         </View>
 
-        <View style={styles.itemSection}>
-          <Text style={styles.sectionTitle}>Articles</Text>
-          <View style={styles.itemHeader}>
-            <Text style={[styles.itemName, styles.label]}>Article</Text>
-            <Text style={[styles.itemQty, styles.label]}>Qté</Text>
-            <Text style={[styles.itemPrice, styles.label]}>Total</Text>
-          </View>
+        <View style={styles.dividerSolid} />
 
-          {data.items.map((item, idx) => (
-            <View key={idx} style={styles.itemRow}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemQty}>
-                {item.pricingType === "PER_KG" && item.weight
-                  ? `${item.weight}kg`
-                  : item.quantity}
-              </Text>
-              <Text style={styles.itemPrice}>{formatFCFA(item.total)}</Text>
-            </View>
-          ))}
+        <View style={styles.tableHeader}>
+          <Text style={styles.colArticle}>Article</Text>
+          <Text style={styles.colQty}>Qté</Text>
+          <Text style={styles.colTotal}>Total</Text>
         </View>
 
-        <View style={[styles.summaryCard, { backgroundColor: brand.soft, borderColor: brand.border }]}>
-          <Text style={styles.sectionTitle}>Récapitulatif</Text>
-          <View style={styles.summaryRow}>
-            <Text style={styles.label}>Avance</Text>
-            <Text style={styles.value}>{formatFCFA(data.paidAmount)}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.label}>Reste</Text>
-            <Text style={[styles.value, { fontFamily: "Helvetica-Bold", color: paymentTheme.solid }]}>
-              {formatFCFA(data.amountDue)}
+        {data.items.map((item, idx) => (
+          <View key={idx} style={styles.itemRow}>
+            <Text style={styles.itemArticle}>{item.name}</Text>
+            <Text style={styles.itemQty}>
+              {item.pricingType === "PER_KG" && item.weight
+                ? `${item.weight}kg`
+                : item.quantity}
             </Text>
+            <Text style={styles.itemTotal}>{formatFCFA(item.total)}</Text>
+          </View>
+        ))}
+
+        <View style={styles.dividerSolid} />
+
+        <View style={styles.totalsContainer}>
+          <View style={styles.totalRow}>
+            <Text style={styles.grandTotalLabel}>TOTAL:</Text>
+            <Text style={styles.grandTotalValue}>{formatFCFA(data.totalAmount)}</Text>
           </View>
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>TOTAL</Text>
-            <Text style={styles.totalValue}>{formatFCFA(data.totalAmount)}</Text>
+            <Text style={styles.totalLabel}>Avance:</Text>
+            <Text style={styles.totalValue}>{formatFCFA(data.paidAmount)}</Text>
+          </View>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Reste à payer:</Text>
+            <Text style={[styles.totalValue, { color: paymentTheme.solid }]}>{formatFCFA(data.amountDue)}</Text>
           </View>
         </View>
 
-        <View
+        <Text
           style={[
-            styles.badge,
+            styles.paymentStatus,
             {
               backgroundColor: paymentTheme.soft,
-              borderColor: paymentTheme.border,
               color: paymentTheme.solid,
+              borderColor: paymentTheme.border,
             },
           ]}
         >
-          <Text>{badgeText}</Text>
-        </View>
+          {badgeText}
+        </Text>
+
+        {(data.tenantWaveNumber || data.tenantOmNumber) && data.amountDue > 0 && (
+          <View style={[styles.paymentInfo, { borderColor: brand.solid }]}>
+            <Text style={[styles.paymentInfoTitle, { color: brand.solid }]}>Paiement mobile disponible</Text>
+            {data.tenantWaveNumber && (
+              <Text style={styles.paymentInfoLine}>Wave: {data.tenantWaveNumber}</Text>
+            )}
+            {data.tenantOmNumber && (
+              <Text style={styles.paymentInfoLine}>Orange Money: {data.tenantOmNumber}</Text>
+            )}
+          </View>
+        )}
 
         {data.qrDataUrl && (
           <View style={styles.qrContainer}>
@@ -464,19 +360,7 @@ export function ReceiptPDF({ data }: { data: ReceiptData }) {
           </View>
         )}
 
-        {(data.tenantWaveNumber || data.tenantOmNumber) && data.amountDue > 0 && (
-          <View style={[styles.paymentBox, { backgroundColor: "#ffffff", borderColor: brand.border }]}>
-            <Text style={[styles.paymentTitle, { color: brand.ink }]}>Paiement mobile disponible</Text>
-            {data.tenantWaveNumber && (
-              <Text style={[styles.paymentLine, { color: "#0f172a" }]}>Wave: {data.tenantWaveNumber}</Text>
-            )}
-            {data.tenantOmNumber && (
-              <Text style={[styles.paymentLine, { color: "#0f172a" }]}>Orange Money: {data.tenantOmNumber}</Text>
-            )}
-          </View>
-        )}
-
-        <View style={styles.divider} />
+        <View style={[styles.dividerDashed, { borderBottomColor: brand.solid, opacity: 0.5 }]} />
         <Text style={styles.footer}>
           Merci de votre confiance !{"\n"}
           Conservez ce reçu pour le retrait.

@@ -1,7 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyToken } from "@/lib/auth-edge";
 
-const PUBLIC_PATHS = ["/login", "/register", "/api/auth/login", "/api/auth/register"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/register",
+  "/api/auth/login",
+  "/api/auth/register",
+  "/share/receipt",
+  "/api/public/receipt",
+];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

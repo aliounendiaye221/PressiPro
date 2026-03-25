@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+const strongPasswordSchema = z
+  .string()
+  .min(10, "Le mot de passe doit contenir au moins 10 caractères")
+  .max(100)
+  .regex(/[a-z]/, "Le mot de passe doit contenir au moins une minuscule")
+  .regex(/[A-Z]/, "Le mot de passe doit contenir au moins une majuscule")
+  .regex(/[0-9]/, "Le mot de passe doit contenir au moins un chiffre")
+  .regex(/[^A-Za-z0-9]/, "Le mot de passe doit contenir au moins un caractère spécial");
+
 // ─── Auth ────────────────────────────────────────────────────
 export const registerSchema = z.object({
   tenantName: z.string().min(2).max(100),
@@ -7,7 +16,7 @@ export const registerSchema = z.object({
   tenantAddress: z.string().optional(),
   name: z.string().min(2).max(100),
   email: z.string().email(),
-  password: z.string().min(6).max(100),
+  password: strongPasswordSchema,
 });
 
 export const loginSchema = z.object({
@@ -72,7 +81,7 @@ export const serviceSchema = z.object({
 // ─── User (admin managing agents) ────────────────────────────
 export const createUserSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6).max(100),
+  password: strongPasswordSchema,
   name: z.string().min(2).max(100),
   role: z.enum(["ADMIN", "AGENT"]),
 });

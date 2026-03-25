@@ -6,6 +6,7 @@ import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils"
 import { generateOrderCode } from "@/lib/order-code";
 import { auditLog } from "@/lib/audit";
 import { PaymentMethod } from "@prisma/client";
+import { parsePagination } from "@/lib/pagination";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,8 +14,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("q") || "";
     const status = searchParams.get("status") || "";
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")));
+    const { page, limit } = parsePagination(searchParams, { maxLimit: 50 });
 
     const where: Record<string, unknown> = { tenantId: session.tenantId };
 

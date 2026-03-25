@@ -11,8 +11,11 @@ import {
   Filter,
   ClipboardList,
   WifiOff,
+  QrCode,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { formatOfflineCacheTime, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
+import { QrScannerModal } from "@/components/qr-scanner-modal";
 
 interface Order {
   id: string;
@@ -60,6 +63,8 @@ export default function OrdersPage() {
   const [isOffline, setIsOffline] = useState(false);
   const [usingCache, setUsingCache] = useState(false);
   const [cacheUpdatedAt, setCacheUpdatedAt] = useState<string | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     setIsOffline(!navigator.onLine);
@@ -131,11 +136,44 @@ export default function OrdersPage() {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Commandes</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} commande{total > 1 ? "s" : ""} au total</p>
         </div>
-        <Link href="/orders/new" className="btn-primary">
-          <PlusCircle className="w-4 h-4" />
-          Nouveau dépôt
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsScannerOpen(true)}
+            className="btn-secondary flex items-center gap-2 text-primary-700 bg-primary-50 border-primary-200 hover:bg-primary-100 focus:ring-primary-500"
+          >
+            <QrCode className="w-4 h-4" />
+            <span className="hidden sm:inline">Scanner Ticket</span>
+          </button>
+          <Link href="/orders/new" className="btn-primary">
+            <PlusCircle className="w-4 h-4" />
+            Nouveau dépôt
+          </Link>
+        </div>
       </div>
+
+      {isScannerOpen && (
+        <QrScannerModal
+          onClose={() => setIsScannerOpen(false)}
+          onScan={(url) => {
+            setIsScannerOpen(false);
+            try {
+              const parsed = new URL(url);
+              if (parsed.pathname.startsWith('/orders/')) {
+                router.push(parsed.pathname);
+              } else {
+                alert("QR Code invalide ou non reconnu.");
+              }
+            } catch (e) {
+              if (url.startsWith('cm') || url.startsWith('cl') || url.length > 20) {
+                router.push(`/orders/${url}`);
+              } else {
+                alert("Format de QR Code non reconnu.");
+              }
+            }
+          }}
+        />
+      )}
 
       {/* Search & filters */}
       <div className="flex flex-col sm:flex-row gap-3">

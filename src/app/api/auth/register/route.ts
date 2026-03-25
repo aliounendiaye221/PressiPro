@@ -2,20 +2,21 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { hashPassword, createToken, tokenCookieOptions } from "@/lib/auth";
 import { registerSchema } from "@/lib/validators";
-import { handleApiError, successResponse } from "@/lib/api-utils";
+import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 import { cookies } from "next/headers";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const data = registerSchema.parse(body);
+    const normalizedEmail = data.email.trim().toLowerCase();
 
     // Check email uniqueness across all tenants (for login simplicity)
     const existingUser = await prisma.user.findFirst({
-      where: { email: data.email },
+      where: { email: normalizedEmail },
     });
     if (existingUser) {
-      return successResponse({ error: "Cet email est déjà utilisé" }, 409);
+      return errorResponse("Cet email est déjà utilisé", 409);
     }
 
     // Create tenant + admin user in a transaction
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
       const user = await tx.user.create({
         data: {
           tenantId: tenant.id,
-          email: data.email,
+          email: normalizedEmail,
           password: hashedPw,
           name: data.name,
           role: "ADMIN",
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
       userId: result.user.id,
       tenantId: result.tenant.id,
       role: result.user.role,
-      email: result.user.email,
+      email: normalizedEmail,
       name: result.user.name,
     });
 

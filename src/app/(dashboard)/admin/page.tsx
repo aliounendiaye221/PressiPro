@@ -315,7 +315,6 @@ export default function AdminPage() {
     if (activeTab === "orders" && orders.length === 0 && !ordersLoading) {
       fetchOrders();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   if (loading) {

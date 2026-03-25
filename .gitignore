@@ -9,3 +9,4 @@ build-output.txt
 build.log
 .vercel
 .env*.local
+.env.vercel

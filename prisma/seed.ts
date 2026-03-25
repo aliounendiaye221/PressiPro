@@ -6,6 +6,11 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Seeding database...");
 
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || "Admin#PressiPro2026!";
+  const superAdminPasswordText =
+    process.env.SEED_SUPER_ADMIN_PASSWORD || "SuperAdmin#PressiPro2026!";
+  const agentPasswordText = process.env.SEED_AGENT_PASSWORD || "Agent#PressiPro2026!";
+
   // ── Tenant Demo ──────────────────────────────────────────
   const tenant = await prisma.tenant.upsert({
     where: { id: "demo-tenant" },
@@ -19,7 +24,7 @@ async function main() {
   });
 
   // ── Admin user ───────────────────────────────────────────
-  const hashedPassword = await bcrypt.hash("admin123", 12);
+  const hashedPassword = await bcrypt.hash(adminPassword, 12);
   const admin = await prisma.user.upsert({
     where: { tenantId_email: { tenantId: tenant.id, email: "admin@pressipro.sn" } },
     update: {},
@@ -33,7 +38,7 @@ async function main() {
   });
 
   // ── Super Admin user ─────────────────────────────────────
-  const superAdminPassword = await bcrypt.hash("super123", 12);
+  const superAdminPassword = await bcrypt.hash(superAdminPasswordText, 12);
   const superAdmin = await prisma.user.upsert({
     where: { tenantId_email: { tenantId: tenant.id, email: "superadmin@pressipro.sn" } },
     update: {},
@@ -47,7 +52,7 @@ async function main() {
   });
 
   // ── Agent user ───────────────────────────────────────────
-  const agentPassword = await bcrypt.hash("agent123", 12);
+  const agentPassword = await bcrypt.hash(agentPasswordText, 12);
   const agent = await prisma.user.upsert({
     where: { tenantId_email: { tenantId: tenant.id, email: "agent@pressipro.sn" } },
     update: {},
@@ -221,8 +226,9 @@ async function main() {
 
   console.log("✅ Seed complete!");
   console.log("  Tenant:", tenant.name);
-  console.log("  Admin:  admin@pressipro.sn / admin123");
-  console.log("  Agent:  agent@pressipro.sn / agent123");
+  console.log("  Admin:  admin@pressipro.sn /", adminPassword);
+  console.log("  Super Admin:  superadmin@pressipro.sn /", superAdminPasswordText);
+  console.log("  Agent:  agent@pressipro.sn /", agentPasswordText);
 }
 
 main()

@@ -66,13 +66,18 @@ npm run dev
 | `DATABASE_URL` | URL PostgreSQL | `postgresql://user:pass@localhost:5432/pressipro` |
 | `JWT_SECRET` | Secret JWT (min 32 chars) | `votre-secret-random-ici` |
 | `NEXT_PUBLIC_APP_URL` | URL publique de l'app | `http://localhost:3000` |
+| `SESSION_TTL_DAYS` | Durée de session persistante (jours, 1-90) | `30` |
+| `SEED_ADMIN_PASSWORD` | Mot de passe seed admin | `Admin#PressiPro2026!` |
+| `SEED_SUPER_ADMIN_PASSWORD` | Mot de passe seed super admin | `SuperAdmin#PressiPro2026!` |
+| `SEED_AGENT_PASSWORD` | Mot de passe seed agent | `Agent#PressiPro2026!` |
 
 ## Compte démo (après seed)
 
 | Rôle | Email | Mot de passe |
 |------|-------|-------------|
-| Admin | admin@pressipro.sn | admin123 |
-| Agent | agent@pressipro.sn | agent123 |
+| Admin | admin@pressipro.sn | `SEED_ADMIN_PASSWORD` |
+| Super Admin | superadmin@pressipro.sn | `SEED_SUPER_ADMIN_PASSWORD` |
+| Agent | agent@pressipro.sn | `SEED_AGENT_PASSWORD` |
 
 ## Structure du projet
 

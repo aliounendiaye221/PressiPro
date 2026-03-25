@@ -33,7 +33,9 @@ import {
   CheckCircle2,
   Truck,
   Inbox,
+  TerminalSquare,
 } from "lucide-react";
+import { printDirectlyPOS } from "@/lib/receipt/escpos";
 
 interface OrderDetail {
   id: string;
@@ -54,6 +56,30 @@ const ORDER_DETAIL_CACHE_KEY_PREFIX = "order-detail:";
 
 function formatFCFA(n: number) {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " F";
+}
+
+function normalizeWhatsAppNumber(phone: string): string | null {
+  const digits = phone.replace(/[^\d+]/g, "");
+  if (!digits) return null;
+
+  let cleaned = digits;
+  if (cleaned.startsWith("+")) {
+    cleaned = cleaned.slice(1);
+  } else if (cleaned.startsWith("00")) {
+    cleaned = cleaned.slice(2);
+  }
+
+  if (cleaned.startsWith("0") && cleaned.length === 10) {
+    cleaned = `221${cleaned.slice(1)}`;
+  } else if (!cleaned.startsWith("221") && cleaned.length === 9) {
+    cleaned = `221${cleaned}`;
+  }
+
+  if (!/^\d{11,15}$/.test(cleaned)) {
+    return null;
+  }
+
+  return cleaned;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -88,18 +114,8 @@ const METHOD_LABELS: Record<string, string> = {
   CASH: "Espèces", OM: "Orange Money", WAVE: "Wave", OTHER: "Autre",
 };
 
-function buildWhatsAppUrl(phone: string, message: string) {
-  let cleaned = phone.replace(/[\s\-().]/g, "");
-  if (cleaned.startsWith("+")) {
-    cleaned = cleaned.slice(1);
-  } else if (cleaned.startsWith("00")) {
-    cleaned = cleaned.slice(2);
-  } else if (cleaned.startsWith("0")) {
-    cleaned = "221" + cleaned.slice(1);
-  } else if (!cleaned.startsWith("221")) {
-    cleaned = "221" + cleaned;
-  }
-  return `https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`;
+function buildWhatsAppUrl(normalizedPhone: string, message: string) {
+  return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
 }
 
 export default function OrderDetailPage() {
@@ -110,6 +126,7 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
+  const [directPrintLoading, setDirectPrintLoading] = useState(false);
 
   // Payment form
   const [showPayment, setShowPayment] = useState(false);
@@ -178,19 +195,19 @@ export default function OrderDetailPage() {
     setOrder((prev) =>
       prev
         ? {
-            ...prev,
-            status: nextStatus,
-            statusHistory: [
-              ...prev.statusHistory,
-              {
-                id: createOfflineTempId(),
-                fromStatus: previousStatus,
-                toStatus: nextStatus,
-                createdAt: new Date().toISOString(),
-                note: "En attente de synchronisation",
-              },
-            ],
-          }
+          ...prev,
+          status: nextStatus,
+          statusHistory: [
+            ...prev.statusHistory,
+            {
+              id: createOfflineTempId(),
+              fromStatus: previousStatus,
+              toStatus: nextStatus,
+              createdAt: new Date().toISOString(),
+              note: "En attente de synchronisation",
+            },
+          ],
+        }
         : prev
     );
     writeOfflineCache(`${ORDER_DETAIL_CACHE_KEY_PREFIX}${id}`, {
@@ -228,18 +245,18 @@ export default function OrderDetailPage() {
     setOrder((prev) =>
       prev
         ? {
-            ...prev,
-            paidAmount: Math.min(prev.totalAmount, prev.paidAmount + amount),
-            payments: [
-              {
-                id: tempPaymentId,
-                amount,
-                method,
-                createdAt: new Date().toISOString(),
-              },
-              ...prev.payments,
-            ],
-          }
+          ...prev,
+          paidAmount: Math.min(prev.totalAmount, prev.paidAmount + amount),
+          payments: [
+            {
+              id: tempPaymentId,
+              amount,
+              method,
+              createdAt: new Date().toISOString(),
+            },
+            ...prev.payments,
+          ],
+        }
         : prev
     );
     writeOfflineCache(`${ORDER_DETAIL_CACHE_KEY_PREFIX}${id}`, {
@@ -554,81 +571,104 @@ export default function OrderDetailPage() {
   const nextAction = nextStatus ? STATUS_ACTIONS[order.status] : null;
 
 
-  // WhatsApp messages (sans lien PDF - l'admin télécharge et joint le PDF manuellement)
-  const receiptMsg = `Bonjour ${order.customer.name},\n\nVotre dépôt *${order.code}* au pressing a été enregistré.\nTotal: ${formatFCFA(order.totalAmount)}\nAvance: ${formatFCFA(order.paidAmount)}\nReste: ${formatFCFA(amountDue)}\n\n📄 Votre facture est jointe à ce message.\n\nMerci de votre confiance !`;
-  const readyMsg = `Bonjour ${order.customer.name},\n\nVotre commande *${order.code}* est prête ! 🎉\nVeuillez passer la récupérer.\n${amountDue > 0 ? `\nReste à payer: ${formatFCFA(amountDue)}` : ""}\n\n📄 Votre facture est jointe à ce message.\n\nMerci !`;
+  const buildWhatsAppMessage = (kind: "receipt" | "ready", receiptShareUrl: string) => {
+    const customerName = order.customer.name;
+    const lines: string[] = [];
 
-  const downloadReceiptPdf = async () => {
-    const res = await fetch(`/api/orders/${order.id}/receipt.pdf?download=1`, {
-      cache: "no-store",
-      headers: {
-        Accept: "application/pdf",
-      },
-    });
+    lines.push(`Bonjour ${customerName},`);
+    lines.push("");
 
-    if (!res.ok) {
-      throw new Error("receipt-download-failed");
+    if (kind === "ready") {
+      lines.push(`✅ Votre commande *${order.code}* est prête pour le retrait.`);
+    } else {
+      lines.push(`🧾 Votre dépôt *${order.code}* est bien enregistré.`);
     }
 
-    const pdfBlob = await res.blob();
-    return new File([pdfBlob], `recu-${order.code}.pdf`, {
-      type: "application/pdf",
-    });
+    lines.push(`Total: ${formatFCFA(order.totalAmount)}`);
+    lines.push(`Déjà payé: ${formatFCFA(order.paidAmount)}`);
+
+    if (amountDue <= 0) {
+      lines.push("Statut paiement: entièrement réglé.");
+    } else if (order.paidAmount > 0) {
+      lines.push(`Statut paiement: acompte reçu, reste ${formatFCFA(amountDue)}.`);
+    } else {
+      lines.push(`Statut paiement: dépôt non réglé, montant dû ${formatFCFA(amountDue)}.`);
+    }
+
+    lines.push("");
+    lines.push(`📄 Reçu sécurisé: ${receiptShareUrl}`);
+    lines.push("Le lien permet d'ouvrir et de télécharger le reçu directement.");
+    lines.push("");
+    lines.push("Merci de votre confiance.");
+
+    return lines.join("\n");
   };
 
-  const triggerReceiptDownload = (file: File) => {
-    const objectUrl = URL.createObjectURL(file);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-  };
-
-  const openWhatsAppConversation = (message: string) => {
-    window.open(
-      buildWhatsAppUrl(order.customer.phone, message),
-      "_blank",
-      "noopener,noreferrer"
-    );
-  };
-
-  const sendWhatsAppWithPdf = async (message: string) => {
+  const sendWhatsAppDirect = async (kind: "receipt" | "ready") => {
     setShareLoading(true);
     setEditError("");
     setSyncMessage("");
 
     try {
-      const pdfFile = await downloadReceiptPdf();
-
-      if (navigator.share) {
-        const sharePayload: ShareData = {
-          title: `Reçu ${order.code}`,
-          text: message,
-          files: [pdfFile],
-        };
-
-        if (!navigator.canShare || navigator.canShare(sharePayload)) {
-          await navigator.share(sharePayload);
-          setSyncMessage("Le reçu est prêt à être partagé. Sélectionnez WhatsApp dans la feuille de partage.");
-          return;
-        }
-      }
-
-      triggerReceiptDownload(pdfFile);
-      openWhatsAppConversation(message);
-      setSyncMessage("Le partage direct n'est pas disponible sur cet appareil. Le reçu a été téléchargé puis WhatsApp a été ouvert.");
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        setSyncMessage("");
+      if (!order.customer.phone?.trim()) {
+        setEditError("Aucun numéro client trouvé sur cette commande.");
         return;
       }
 
-      setEditError("Impossible de préparer le reçu pour WhatsApp.");
+      const normalizedPhone = normalizeWhatsAppNumber(order.customer.phone);
+      if (!normalizedPhone) {
+        setEditError("Numéro client invalide. Corrigez le numéro avant l'envoi WhatsApp.");
+        return;
+      }
+
+      const linkRes = await fetch(`/api/orders/${order.id}/receipt-share`, {
+        cache: "no-store",
+      });
+      const linkData = await linkRes.json().catch(() => null);
+      if (!linkRes.ok || !linkData?.shareUrl) {
+        throw new Error(linkData?.error || "Reçu indisponible pour le partage");
+      }
+
+      const message = buildWhatsAppMessage(kind, linkData.shareUrl as string);
+      const popup = window.open(
+        buildWhatsAppUrl(normalizedPhone, message),
+        "_blank",
+        "noopener,noreferrer"
+      );
+
+      if (!popup) {
+        setEditError("Le navigateur a bloqué l'ouverture de WhatsApp. Autorisez les popups puis réessayez.");
+        return;
+      }
+
+      setSyncMessage("Conversation WhatsApp ouverte directement avec le bon client.");
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "Impossible d'ouvrir WhatsApp avec le reçu.");
     } finally {
       setShareLoading(false);
+    }
+  };
+
+  const handleDirectPrint = async (isDuplicate = false) => {
+    setDirectPrintLoading(true);
+    try {
+      if (!("serial" in navigator)) {
+        setEditError("L'Impression Directe n'est supportée que sur Chrome pc/android (Web Serial API). Veuillez imprimer le reçu PDF classique.");
+        return;
+      }
+      const res = await fetch(`/api/orders/${id}/receipt.pdf?json=1${isDuplicate ? "&duplicate=1" : ""}`);
+      if (!res.ok) throw new Error("Impossible de charger les données du reçu");
+      const data = await res.json();
+      await printDirectlyPOS(data);
+      setSyncMessage("Impression thermique commandée avec succès !");
+    } catch (e: any) {
+      if (e.name === "NotFoundError" || e.name === "NotAllowedError" || e.message?.includes("No port selected")) {
+        // User cancelled picker, don't show error
+        return;
+      }
+      setEditError(e.message || "Erreur d'impression série.");
+    } finally {
+      setDirectPrintLoading(false);
     }
   };
 
@@ -680,32 +720,32 @@ export default function OrderDetailPage() {
           <div className="card">
             <h2 className="font-semibold mb-3">Articles</h2>
             <div className="overflow-x-auto -mx-4 sm:-mx-6">
-            <table className="min-w-[400px] w-full text-sm">
-              <thead>
-                <tr className="border-b text-gray-500 text-left">
-                  <th className="py-1">Article</th>
-                  <th className="py-1 text-center">Qté</th>
-                  <th className="py-1 text-right">P.U.</th>
-                  <th className="py-1 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {order.items.map((item) => (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="py-2">{item.name}</td>
-                    <td className="py-2 text-center">{item.quantity}</td>
-                    <td className="py-2 text-right">{formatFCFA(item.unitPrice)}</td>
-                    <td className="py-2 text-right font-medium">{formatFCFA(item.total)}</td>
+              <table className="min-w-[400px] w-full text-sm">
+                <thead>
+                  <tr className="border-b text-gray-500 text-left">
+                    <th className="py-1">Article</th>
+                    <th className="py-1 text-center">Qté</th>
+                    <th className="py-1 text-right">P.U.</th>
+                    <th className="py-1 text-right">Total</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 font-bold">
-                  <td colSpan={3} className="py-2">TOTAL</td>
-                  <td className="py-2 text-right text-lg">{formatFCFA(order.totalAmount)}</td>
-                </tr>
-              </tfoot>
-            </table>
+                </thead>
+                <tbody>
+                  {order.items.map((item) => (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="py-2">{item.name}</td>
+                      <td className="py-2 text-center">{item.quantity}</td>
+                      <td className="py-2 text-right">{formatFCFA(item.unitPrice)}</td>
+                      <td className="py-2 text-right font-medium">{formatFCFA(item.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 font-bold">
+                    <td colSpan={3} className="py-2">TOTAL</td>
+                    <td className="py-2 text-right text-lg">{formatFCFA(order.totalAmount)}</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </div>
 
@@ -873,13 +913,21 @@ export default function OrderDetailPage() {
             )}
 
             {/* Receipt PDF */}
+            <button
+              onClick={() => handleDirectPrint(false)}
+              disabled={directPrintLoading}
+              className="btn-primary w-full text-center flex items-center justify-center gap-2"
+            >
+              <TerminalSquare className="w-4 h-4" /> Impression Directe (Bluetooth/USB)
+            </button>
+
             <a
               href={`/api/orders/${order.id}/receipt.pdf`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-secondary w-full text-center block"
             >
-              <Printer className="w-4 h-4" /> Imprimer reçu
+              <Printer className="w-4 h-4" /> Reçu PDF (Classique)
             </a>
 
             <a
@@ -899,22 +947,22 @@ export default function OrderDetailPage() {
               <Download className="w-4 h-4" /> Télécharger la facture
             </a>
 
-            {/* WhatsApp — télécharge le PDF puis ouvre WhatsApp */}
+            {/* WhatsApp — conversation directe client + reçu partageable */}
             <button
-              onClick={() => sendWhatsAppWithPdf(receiptMsg)}
+              onClick={() => sendWhatsAppDirect("receipt")}
               disabled={shareLoading}
               className="btn-success w-full text-center flex items-center justify-center gap-2"
             >
-              <MessageCircle className="w-4 h-4" /> {shareLoading ? "Préparation du reçu..." : "WhatsApp — Envoyer facture"}
+              <MessageCircle className="w-4 h-4" /> {shareLoading ? "Ouverture WhatsApp..." : "WhatsApp — Envoyer reçu client"}
             </button>
 
             {order.status === "PRET" && (
               <button
-                onClick={() => sendWhatsAppWithPdf(readyMsg)}
+                onClick={() => sendWhatsAppDirect("ready")}
                 disabled={shareLoading}
                 className="btn-success w-full text-center flex items-center justify-center gap-2"
               >
-                <MessageCircle className="w-4 h-4" /> {shareLoading ? "Préparation du reçu..." : "WhatsApp — Commande prête"}
+                <MessageCircle className="w-4 h-4" /> {shareLoading ? "Ouverture WhatsApp..." : "WhatsApp — Notifier commande prête"}
               </button>
             )}
 

@@ -75,8 +75,10 @@ export const metadata: Metadata = {
     title: "PressiPro",
   },
   icons: {
+    shortcut: "/favicon.svg",
     apple: "/icon-192.png",
     icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
@@ -129,9 +131,16 @@ export default function RootLayout({
   const orgJsonLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
+    "@id": `${SITE_URL}#organization`,
     name: "PressiPro",
     url: SITE_URL,
-    logo: `${SITE_URL}/icon-512.png`,
+    logo: {
+      "@type": "ImageObject",
+      url: `${SITE_URL}/icon-512.png`,
+      width: 512,
+      height: 512,
+    },
+    image: [`${SITE_URL}/icon-512.png`],
     contactPoint: {
       "@type": "ContactPoint",
       telephone: "+221786037913",
@@ -142,9 +151,22 @@ export default function RootLayout({
     sameAs: [],
   };
 
+  const websiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "@id": `${SITE_URL}#website`,
+    url: SITE_URL,
+    name: "PressiPro",
+    inLanguage: "fr-SN",
+    publisher: {
+      "@id": `${SITE_URL}#organization`,
+    },
+  };
+
   return (
     <html lang="fr">
       <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
         <script
           type="application/ld+json"
@@ -153,6 +175,10 @@ export default function RootLayout({
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
       </head>
       <body>

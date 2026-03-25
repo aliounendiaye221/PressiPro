@@ -31,9 +31,10 @@ export async function POST(request: NextRequest) {
     const session = await requireAdmin();
     const body = await request.json();
     const data = createUserSchema.parse(body);
+    const normalizedEmail = data.email.trim().toLowerCase();
 
-    const existing = await prisma.user.findUnique({
-      where: { tenantId_email: { tenantId: session.tenantId, email: data.email } },
+    const existing = await prisma.user.findFirst({
+      where: { email: normalizedEmail },
     });
     if (existing) {
       return errorResponse("Un utilisateur avec cet email existe déjà", 409);
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
     const user = await prisma.user.create({
       data: {
         tenantId: session.tenantId,
-        email: data.email,
+        email: normalizedEmail,
         password: hashedPw,
         name: data.name,
         role: data.role,

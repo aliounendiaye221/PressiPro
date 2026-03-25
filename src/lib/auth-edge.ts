@@ -1,9 +1,13 @@
 import { SignJWT, jwtVerify } from "jose";
 import type { Role } from "@prisma/client";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "fallback-dev-secret-change-me"
-);
+const jwtSecretValue = process.env.JWT_SECRET;
+
+if (!jwtSecretValue || jwtSecretValue.length < 32) {
+  throw new Error("JWT_SECRET must be set and contain at least 32 characters");
+}
+
+const JWT_SECRET = new TextEncoder().encode(jwtSecretValue);
 
 export interface SessionPayload {
   userId: string;

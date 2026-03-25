@@ -26,8 +26,18 @@ export async function GET(
       tenantId: order.tenantId,
     });
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-    const shareUrl = `${appUrl}/share/receipt/${token}`;
+    const fallbackOrigin = new URL(request.url).origin;
+    const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL ?? fallbackOrigin;
+    const sanitizedAppUrl = rawAppUrl.trim().replace(/[\r\n]/g, "");
+
+    let baseOrigin = fallbackOrigin;
+    try {
+      baseOrigin = new URL(sanitizedAppUrl).origin;
+    } catch {
+      baseOrigin = fallbackOrigin;
+    }
+
+    const shareUrl = new URL(`/share/receipt/${token}`, `${baseOrigin}/`).toString();
 
     return successResponse({
       shareUrl,

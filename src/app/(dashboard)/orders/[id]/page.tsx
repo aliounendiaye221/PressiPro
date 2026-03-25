@@ -596,7 +596,9 @@ export default function OrderDetailPage() {
     }
 
     lines.push("");
-    lines.push(`📄 Reçu sécurisé: ${receiptShareUrl}`);
+    lines.push("📄 Reçu sécurisé:");
+    lines.push(receiptShareUrl);
+    lines.push("");
     lines.push("Le lien permet d'ouvrir et de télécharger le reçu directement.");
     lines.push("");
     lines.push("Merci de votre confiance.");
@@ -630,16 +632,10 @@ export default function OrderDetailPage() {
       }
 
       const message = buildWhatsAppMessage(kind, linkData.shareUrl as string);
-      const popup = window.open(
-        buildWhatsAppUrl(normalizedPhone, message),
-        "_blank",
-        "noopener,noreferrer"
-      );
-
-      if (!popup) {
-        setEditError("Le navigateur a bloqué l'ouverture de WhatsApp. Autorisez les popups puis réessayez.");
-        return;
-      }
+      const whatsappUrl = buildWhatsAppUrl(normalizedPhone, message);
+      
+      // Utiliser window.location pour une navigation plus fiable que les popups
+      window.location.href = whatsappUrl;
 
       setSyncMessage("Conversation WhatsApp ouverte directement avec le bon client.");
     } catch (error) {

@@ -363,7 +363,8 @@ export function ReceiptPDF({ data }: { data: ReceiptData }) {
         <View style={[styles.dividerDashed, { borderBottomColor: brand.solid, opacity: 0.5 }]} />
         <Text style={styles.footer}>
           Merci de votre confiance !{"\n"}
-          Conservez ce reçu pour le retrait.
+          Equipe {data.tenantName}{"\n"}
+          Conservez ce recu pour le retrait.
         </Text>
       </Page>
     </Document>

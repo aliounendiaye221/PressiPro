@@ -121,7 +121,7 @@ function buildWhatsAppUrl(normalizedPhone: string, message: string) {
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -573,6 +573,7 @@ export default function OrderDetailPage() {
 
   const buildWhatsAppMessage = (kind: "receipt" | "ready", receiptShareUrl: string) => {
     const customerName = order.customer.name;
+    const pressingName = (tenant?.name || "Votre pressing").trim();
     const safeReceiptUrl = receiptShareUrl.trim().replace(/\s+/g, "");
     const paymentStatusLine = amountDue <= 0
       ? "Paiement: solde regle"
@@ -581,7 +582,7 @@ export default function OrderDetailPage() {
       : `Paiement: non regle, montant du ${formatFCFA(amountDue)}`;
     const lines: string[] = [];
 
-    lines.push("PRESSIPRO | Mise a jour commande");
+    lines.push(`${pressingName} | Mise a jour commande`);
     lines.push("");
     lines.push(`Bonjour ${customerName},`);
     lines.push("");
@@ -607,7 +608,7 @@ export default function OrderDetailPage() {
     lines.push("Ouvrez ce lien pour consulter ou telecharger le recu.");
     lines.push("");
     lines.push("Merci de votre confiance,");
-    lines.push("Equipe PressiPro");
+    lines.push(`Equipe ${pressingName}`);
 
     return lines.join("\n");
   };

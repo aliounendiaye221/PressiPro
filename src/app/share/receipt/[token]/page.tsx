@@ -84,7 +84,7 @@ export default function ReceiptSharePage() {
             <FileText className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-900">Reçu PressiPro</h1>
+            <h1 className="text-lg font-bold text-slate-900">{meta ? `Recu ${meta.tenantName}` : "Recu"}</h1>
             <p className="text-sm text-slate-500">Accès client sécurisé</p>
           </div>
         </div>

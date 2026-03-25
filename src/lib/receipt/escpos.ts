@@ -112,6 +112,7 @@ export async function printDirectlyPOS(data: ReceiptData): Promise<void> {
 
         await write(ALIGN_CENTER);
         await writeLine("Merci de votre confiance !");
+        await writeLine(`Equipe ${data.tenantName}`);
         await writeLine("Veuillez conserver ce recu.");
         await writeLine("");
         await writeLine("");

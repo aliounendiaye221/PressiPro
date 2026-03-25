@@ -39,16 +39,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchMe = useCallback(async () => {
     try {
-      const res = await fetch("/api/auth/me");
+      const res = await fetch("/api/auth/me", {
+        cache: "no-store",
+        credentials: "include",
+      });
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
         setTenant(data.tenant);
         writeOfflineCache(AUTH_CACHE_KEY, { user: data.user, tenant: data.tenant });
-      } else {
+      } else if (res.status === 401) {
         setUser(null);
         setTenant(null);
         removeOfflineCache(AUTH_CACHE_KEY);
+      } else {
+        const cached = readOfflineCache<{ user: User | null; tenant: Tenant | null }>(AUTH_CACHE_KEY);
+        setUser(cached?.data.user ?? null);
+        setTenant(cached?.data.tenant ?? null);
       }
     } catch {
       const cached = readOfflineCache<{ user: User | null; tenant: Tenant | null }>(AUTH_CACHE_KEY);
@@ -67,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ email, password }),
     });
     const data = await res.json();
@@ -81,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(formData),
     });
     const data = await res.json();
@@ -92,7 +101,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+    });
     setUser(null);
     setTenant(null);
     removeOfflineCache(AUTH_CACHE_KEY);

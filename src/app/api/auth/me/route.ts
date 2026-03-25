@@ -1,15 +1,13 @@
 import { createToken, requireSession, tokenCookieOptions } from "@/lib/auth";
 import { successResponse, handleApiError, errorResponse } from "@/lib/api-utils";
 import { prisma } from "@/lib/db";
-import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
     const session = await requireSession();
     const refreshedToken = await createToken(session);
-    const cookieStore = await cookies();
     const opts = tokenCookieOptions();
-    cookieStore.set(opts.name, refreshedToken, opts);
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: session.tenantId },
@@ -20,7 +18,7 @@ export async function GET() {
       return errorResponse("Tenant introuvable", 404);
     }
 
-    return successResponse({
+    const response = successResponse({
       user: {
         id: session.userId,
         name: session.name,
@@ -29,6 +27,10 @@ export async function GET() {
       },
       tenant,
     });
+
+    response.cookies.set(opts.name, refreshedToken, opts);
+    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    return response;
   } catch (error) {
     return handleApiError(error);
   }

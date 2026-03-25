@@ -4,7 +4,6 @@ import { prisma } from "@/lib/db";
 import { verifyPassword, createToken, tokenCookieOptions } from "@/lib/auth";
 import { loginSchema } from "@/lib/validators";
 import { handleApiError, errorResponse, successResponse } from "@/lib/api-utils";
-import { cookies } from "next/headers";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const MAX_LOGIN_ATTEMPTS_PER_IP = 30;
@@ -136,11 +135,8 @@ export async function POST(request: NextRequest) {
       name: user.name,
     });
 
-    const cookieStore = await cookies();
     const opts = tokenCookieOptions();
-    cookieStore.set(opts.name, token, opts);
-
-    return successResponse({
+    const response = successResponse({
       user: {
         id: user.id,
         name: user.name,
@@ -152,6 +148,10 @@ export async function POST(request: NextRequest) {
         name: user.tenant.name,
       },
     });
+
+    response.cookies.set(opts.name, token, opts);
+    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    return response;
   } catch (error) {
     return handleApiError(error);
   }

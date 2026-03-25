@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { hashPassword, createToken, tokenCookieOptions } from "@/lib/auth";
 import { registerSchema } from "@/lib/validators";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
-import { cookies } from "next/headers";
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,11 +51,8 @@ export async function POST(request: NextRequest) {
       name: result.user.name,
     });
 
-    const cookieStore = await cookies();
     const opts = tokenCookieOptions();
-    cookieStore.set(opts.name, token, opts);
-
-    return successResponse({
+    const response = successResponse({
       user: {
         id: result.user.id,
         name: result.user.name,
@@ -67,6 +64,10 @@ export async function POST(request: NextRequest) {
         name: result.tenant.name,
       },
     }, 201);
+
+    response.cookies.set(opts.name, token, opts);
+    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    return response;
   } catch (error) {
     return handleApiError(error);
   }

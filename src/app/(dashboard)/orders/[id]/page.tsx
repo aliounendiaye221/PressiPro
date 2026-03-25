@@ -574,35 +574,40 @@ export default function OrderDetailPage() {
   const buildWhatsAppMessage = (kind: "receipt" | "ready", receiptShareUrl: string) => {
     const customerName = order.customer.name;
     const safeReceiptUrl = receiptShareUrl.trim().replace(/\s+/g, "");
+    const paymentStatusLine = amountDue <= 0
+      ? "Paiement: solde regle"
+      : order.paidAmount > 0
+      ? `Paiement: acompte recu, reste ${formatFCFA(amountDue)}`
+      : `Paiement: non regle, montant du ${formatFCFA(amountDue)}`;
     const lines: string[] = [];
 
+    lines.push("PRESSIPRO | Mise a jour commande");
+    lines.push("");
     lines.push(`Bonjour ${customerName},`);
     lines.push("");
 
     if (kind === "ready") {
-      lines.push(`✅ Votre commande *${order.code}* est prête pour le retrait.`);
+      lines.push(`Votre commande *${order.code}* est prete au retrait.`);
+      lines.push("Statut: prete");
     } else {
-      lines.push(`🧾 Votre dépôt *${order.code}* est bien enregistré.`);
-    }
-
-    lines.push(`Total: ${formatFCFA(order.totalAmount)}`);
-    lines.push(`Déjà payé: ${formatFCFA(order.paidAmount)}`);
-
-    if (amountDue <= 0) {
-      lines.push("Statut paiement: entièrement réglé.");
-    } else if (order.paidAmount > 0) {
-      lines.push(`Statut paiement: acompte reçu, reste ${formatFCFA(amountDue)}.`);
-    } else {
-      lines.push(`Statut paiement: dépôt non réglé, montant dû ${formatFCFA(amountDue)}.`);
+      lines.push(`Votre depot *${order.code}* est bien enregistre.`);
+      lines.push("Statut: enregistre");
     }
 
     lines.push("");
-    lines.push("📄 Reçu sécurisé:");
+    lines.push("Resume");
+    lines.push(`- Total: ${formatFCFA(order.totalAmount)}`);
+    lines.push(`- Deja paye: ${formatFCFA(order.paidAmount)}`);
+    lines.push(`- ${paymentStatusLine}`);
+
+    lines.push("");
+    lines.push("Recu securise");
     lines.push(safeReceiptUrl);
     lines.push("");
-    lines.push("Le lien permet d'ouvrir et de télécharger le reçu directement.");
+    lines.push("Ouvrez ce lien pour consulter ou telecharger le recu.");
     lines.push("");
-    lines.push("Merci de votre confiance.");
+    lines.push("Merci de votre confiance,");
+    lines.push("Equipe PressiPro");
 
     return lines.join("\n");
   };

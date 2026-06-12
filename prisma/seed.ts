@@ -39,7 +39,7 @@ async function main() {
 
   // ── Super Admin user ─────────────────────────────────────
   const superAdminPassword = await bcrypt.hash(superAdminPasswordText, 12);
-  const superAdmin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { tenantId_email: { tenantId: tenant.id, email: "superadmin@pressipro.sn" } },
     update: {},
     create: {

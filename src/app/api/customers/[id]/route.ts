@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireTenantSession } from "@/lib/tenant";
 import { customerSchema } from "@/lib/validators";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
+import { buildPhoneLookupCandidates } from "@/lib/phone";
 
 export async function GET(
   _request: NextRequest,
@@ -60,8 +61,15 @@ export async function PUT(
 
     // Check phone uniqueness (if changed)
     if (data.phone !== existing.phone) {
-      const duplicate = await prisma.customer.findUnique({
-        where: { tenantId_phone: { tenantId: session.tenantId, phone: data.phone } },
+      const phoneCandidates = buildPhoneLookupCandidates(data.phone);
+      const phonesToCheck = phoneCandidates.length > 0 ? phoneCandidates : [data.phone];
+      const duplicate = await prisma.customer.findFirst({
+        where: {
+          tenantId: session.tenantId,
+          id: { not: id },
+          OR: phonesToCheck.map((phone) => ({ phone })),
+        },
+        select: { id: true },
       });
       if (duplicate) {
         return errorResponse("Un client avec ce numéro existe déjà", 409);

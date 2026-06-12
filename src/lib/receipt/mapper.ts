@@ -29,7 +29,9 @@ export interface ReceiptData {
   }[];
 
   // Totals
-  totalAmount: number;
+  totalAmount: number; // Final total amount after discount
+  discountAmount?: number;
+  discountReason?: string | null;
   paidAmount: number;
   amountDue: number;
 

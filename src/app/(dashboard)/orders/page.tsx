@@ -67,6 +67,7 @@ export default function OrdersPage() {
   const router = useRouter();
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsOffline(!navigator.onLine);
     const syncNetworkState = () => setIsOffline(!navigator.onLine);
     window.addEventListener("online", syncNetworkState);
@@ -164,7 +165,7 @@ export default function OrdersPage() {
               } else {
                 alert("QR Code invalide ou non reconnu.");
               }
-            } catch (e) {
+            } catch {
               if (url.startsWith('cm') || url.startsWith('cl') || url.length > 20) {
                 router.push(`/orders/${url}`);
               } else {

@@ -17,7 +17,7 @@ export async function POST(
     const data = createPaymentSchema.parse(body);
 
     const order = await prisma.order.findFirst({
-      where: { id: orderId, tenantId: session.tenantId },
+      where: { id: orderId, tenantId: session.tenantId, deletedAt: null },
     });
 
     if (!order) {
@@ -81,7 +81,7 @@ export async function GET(
     const { id: orderId } = await params;
 
     const order = await prisma.order.findFirst({
-      where: { id: orderId, tenantId: session.tenantId },
+      where: { id: orderId, tenantId: session.tenantId, deletedAt: null },
       select: { id: true },
     });
 

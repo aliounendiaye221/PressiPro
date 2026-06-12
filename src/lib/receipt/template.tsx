@@ -1,3 +1,4 @@
+/* eslint-disable jsx-a11y/alt-text */
 import React from "react";
 import {
   Document,
@@ -314,10 +315,28 @@ export function ReceiptPDF({ data }: { data: ReceiptData }) {
         <View style={styles.dividerSolid} />
 
         <View style={styles.totalsContainer}>
-          <View style={styles.totalRow}>
-            <Text style={styles.grandTotalLabel}>TOTAL:</Text>
-            <Text style={styles.grandTotalValue}>{formatFCFA(data.totalAmount)}</Text>
-          </View>
+          {data.discountAmount && data.discountAmount > 0 ? (
+            <>
+              <View style={styles.totalRow}>
+                <Text style={{ ...styles.totalLabel, color: "#555" }}>Sous-total:</Text>
+                <Text style={{ ...styles.totalValue, color: "#555" }}>{formatFCFA(data.totalAmount + data.discountAmount)}</Text>
+              </View>
+              <View style={styles.totalRow}>
+                <Text style={{ ...styles.totalLabel, color: "#991b1b" }}>Réd. {data.discountReason ? `(${data.discountReason})` : ""}:</Text>
+                <Text style={{ ...styles.totalValue, color: "#991b1b" }}>- {formatFCFA(data.discountAmount)}</Text>
+              </View>
+              <View style={[styles.totalRow, { marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: "#000" }]}>
+                <Text style={styles.grandTotalLabel}>TOTAL NET:</Text>
+                <Text style={styles.grandTotalValue}>{formatFCFA(data.totalAmount)}</Text>
+              </View>
+            </>
+          ) : (
+            <View style={styles.totalRow}>
+              <Text style={styles.grandTotalLabel}>TOTAL:</Text>
+              <Text style={styles.grandTotalValue}>{formatFCFA(data.totalAmount)}</Text>
+            </View>
+          )}
+
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Avance:</Text>
             <Text style={styles.totalValue}>{formatFCFA(data.paidAmount)}</Text>

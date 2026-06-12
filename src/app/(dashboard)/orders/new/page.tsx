@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, UserPlus, ShoppingCart, Plus, Minus, Weight, Package, CalendarClock, StickyNote, Banknote, Sparkles, Trash2 } from "lucide-react";
+import { Search, UserPlus, ShoppingCart, Plus, Minus, Weight, Package, CalendarClock, StickyNote, Banknote, Sparkles, Trash2, CheckCircle2 } from "lucide-react";
 import { createOfflineTempId, enqueueOfflineAction } from "@/lib/offline-queue";
 import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
+import { normalizePhoneForStorage } from "@/lib/phone";
 
 interface Service {
   id: string;
@@ -47,6 +48,8 @@ export default function NewOrderPage() {
   const [promisedAt, setPromisedAt] = useState("");
   const [advanceAmount, setAdvanceAmount] = useState(0);
   const [advanceMethod, setAdvanceMethod] = useState("CASH");
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [discountReason, setDiscountReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [syncMessage, setSyncMessage] = useState("");
@@ -54,8 +57,10 @@ export default function NewOrderPage() {
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [isOffline, setIsOffline] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsOffline(!navigator.onLine);
     const syncNetworkState = () => setIsOffline(!navigator.onLine);
     window.addEventListener("online", syncNetworkState);
@@ -221,6 +226,8 @@ export default function NewOrderPage() {
       promisedAt: promisedAt || undefined,
       advanceAmount: advanceAmount > 0 ? advanceAmount : undefined,
       advanceMethod: advanceAmount > 0 ? advanceMethod : undefined,
+      discountAmount: discountAmount > 0 ? discountAmount : undefined,
+      discountReason: discountReason || undefined,
     };
 
     const queueOrder = () => {
@@ -240,6 +247,8 @@ export default function NewOrderPage() {
       setPromisedAt("");
       setAdvanceAmount(0);
       setAdvanceMethod("CASH");
+      setDiscountAmount(0);
+      setDiscountReason("");
       setSyncMessage("Commande enregistree hors ligne. Elle sera creee automatiquement des que la connexion reviendra.");
     };
 
@@ -268,14 +277,22 @@ export default function NewOrderPage() {
     }
   };
 
-  const quickItems = services.filter((s) => s.isQuickItem);
-  const otherItems = services.filter((s) => !s.isQuickItem);
+  const categories = Array.from(
+    new Set(services.map((s) => s.category).filter((c): c is string => !!c))
+  ).sort();
+
+  const filteredServices = selectedCategory
+    ? services.filter((s) => s.category === selectedCategory)
+    : services;
+
+  const quickItems = filteredServices.filter((s) => s.isQuickItem);
+  const otherItems = filteredServices.filter((s) => !s.isQuickItem);
 
   return (
     <div className="space-y-4">
       {isOffline && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Mode hors ligne actif. Les services sont lus depuis le cache et les nouvelles actions seront placees en file d'attente.
+          Mode hors ligne actif. Les services sont lus depuis le cache et les nouvelles actions seront placees en file d&apos;attente.
         </div>
       )}
 
@@ -352,12 +369,28 @@ export default function NewOrderPage() {
                       value={newCustomerName}
                       onChange={(e) => setNewCustomerName(e.target.value)}
                     />
-                    <input
-                      placeholder="+221 7X XXX XX XX"
-                      className="input-field"
-                      value={newCustomerPhone}
-                      onChange={(e) => setNewCustomerPhone(e.target.value)}
-                    />
+                    <div className="relative">
+                      <input
+                        placeholder="+221 7X XXX XX XX"
+                        className={`input-field pr-10 transition-all duration-300 ${
+                          normalizePhoneForStorage(newCustomerPhone)
+                            ? "border-emerald-500 focus:border-emerald-600 focus:ring-emerald-500/20 shadow-emerald-500/5 shadow-sm"
+                            : ""
+                        }`}
+                        value={newCustomerPhone}
+                        onChange={(e) => setNewCustomerPhone(e.target.value)}
+                      />
+                      {normalizePhoneForStorage(newCustomerPhone) && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 animate-pop-in">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        </span>
+                      )}
+                    </div>
+                    {normalizePhoneForStorage(newCustomerPhone) && (
+                      <p className="text-[11px] text-emerald-600 font-semibold mt-1 animate-fade-in">
+                        Format normalisé : {normalizePhoneForStorage(newCustomerPhone)}
+                      </p>
+                    )}
                     <button className="btn-primary text-xs" onClick={createCustomer}>
                       <UserPlus className="w-3.5 h-3.5" /> Créer le client
                     </button>
@@ -367,6 +400,41 @@ export default function NewOrderPage() {
             )}
           </div>
 
+          {/* Categories sliding pills */}
+          {categories.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
+              <button
+                type="button"
+                onClick={() => setSelectedCategory(null)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 active:scale-95 ${
+                  selectedCategory === null
+                    ? "bg-primary-600 text-white shadow-md shadow-primary-500/20 border border-transparent"
+                    : "bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50"
+                }`}
+              >
+                Tout ({services.length})
+              </button>
+              {categories.map((cat) => {
+                const count = services.filter((s) => s.category === cat).length;
+                const isSelected = selectedCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSelectedCategory(isSelected ? null : cat)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 active:scale-95 ${
+                      isSelected
+                        ? "bg-gradient-to-tr from-primary-600 to-primary-500 text-white border border-transparent shadow-[0_0_12px_rgba(37,99,235,0.25)]"
+                        : "bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50"
+                    }`}
+                  >
+                    {cat} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Quick items - big buttons */}
           <div className="card">
             <h2 className="font-semibold mb-3 flex items-center gap-2"><Sparkles className="w-4 h-4 text-amber-500" /> Articles rapides</h2>
@@ -375,7 +443,7 @@ export default function NewOrderPage() {
                 <button
                   key={s.id}
                   onClick={() => addToCart(s)}
-                  className="flex flex-col items-center justify-center p-3 bg-gradient-to-br from-primary-50 to-primary-100/50 hover:from-primary-100 hover:to-primary-200/50 rounded-xl text-center transition-all min-h-[70px] group hover:shadow-sm"
+                  className="relative flex flex-col items-center justify-center p-3 bg-gradient-to-br from-primary-50 via-white to-primary-100/40 hover:from-primary-100 hover:to-primary-200/60 border border-primary-100/60 hover:border-primary-300 rounded-2xl text-center transition-all duration-300 min-h-[76px] group hover:shadow-lg hover:shadow-primary-500/10 active:scale-[0.97] hover:-translate-y-0.5"
                 >
                   <span className="text-sm font-medium leading-tight group-hover:text-primary-700">{s.name}</span>
                   <span className="text-xs text-gray-500 mt-0.5">
@@ -425,7 +493,9 @@ export default function NewOrderPage() {
                 {cart.map((item) => (
                   <div
                     key={item.serviceId}
-                    className="bg-gray-50 p-3 rounded-xl"
+                    className={`bg-white p-3 rounded-xl border border-gray-100 border-l-4 shadow-sm hover:shadow-md transition-all duration-200 ${
+                      item.pricingType === "PER_KG" ? "border-l-amber-500" : "border-l-primary-500"
+                    }`}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-sm font-medium">{item.name}</p>
@@ -490,10 +560,41 @@ export default function NewOrderPage() {
             )}
 
             {/* Total */}
-            <div className="border-t pt-3 mt-3">
-              <div className="flex justify-between text-lg sm:text-xl font-bold">
-                <span>TOTAL</span>
-                <span className="text-primary-700">{formatFCFA(total)}</span>
+            <div className="border-t pt-3 mt-3 space-y-2">
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Sous-total</span>
+                <span>{formatFCFA(total)}</span>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5 focus:text-primary-700">
+                    Réduction (FCFA)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={total}
+                    className="input-field text-red-600"
+                    value={discountAmount || ""}
+                    onChange={(e) => setDiscountAmount(parseInt(e.target.value) || 0)}
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={discountReason}
+                    onChange={(e) => setDiscountReason(e.target.value)}
+                    placeholder="Motif (ex: client fidèle)"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between text-lg sm:text-xl font-bold pt-2 border-t border-dashed">
+                <span>TOTAL NET</span>
+                <span className="text-primary-700">{formatFCFA(Math.max(0, total - discountAmount))}</span>
               </div>
             </div>
 
@@ -532,7 +633,7 @@ export default function NewOrderPage() {
                   <input
                     type="number"
                     min={0}
-                    max={total}
+                    max={Math.max(0, total - discountAmount)}
                     className="input-field"
                     value={advanceAmount || ""}
                     onChange={(e) => setAdvanceAmount(parseInt(e.target.value) || 0)}
@@ -563,7 +664,7 @@ export default function NewOrderPage() {
               className="btn-success w-full btn-lg mt-4"
             >
               <Sparkles className="w-4 h-4" />
-              {submitting ? "Enregistrement..." : `Valider le dépôt — ${formatFCFA(total)}`}
+              {submitting ? "Enregistrement..." : `Valider le dépôt — ${formatFCFA(Math.max(0, total - discountAmount))}`}
             </button>
           </div>
         </div>

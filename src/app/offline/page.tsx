@@ -63,7 +63,7 @@ export default function OfflinePage() {
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
               <p className="font-semibold text-white">Conseil</p>
-              <p className="mt-1">Installez l'app pour un acces plus rapide depuis le bureau ou l'accueil.</p>
+              <p className="mt-1">Installez l&apos;app pour un acces plus rapide depuis le bureau ou l&apos;accueil.</p>
             </div>
           </div>
         </section>

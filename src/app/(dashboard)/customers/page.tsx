@@ -32,6 +32,7 @@ export default function CustomersPage() {
   const [syncMessage, setSyncMessage] = useState("");
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsOffline(!navigator.onLine);
     const syncNetworkState = () => setIsOffline(!navigator.onLine);
     window.addEventListener("online", syncNetworkState);

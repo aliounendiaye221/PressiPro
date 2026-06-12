@@ -82,6 +82,10 @@ const statements = [
     CONSTRAINT "Order_pkey" PRIMARY KEY ("id")
   )`,
 
+  // Order loyalty discount fields (safe for existing databases)
+  `ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "discountAmount" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "discountReason" TEXT`,
+
   `CREATE TABLE IF NOT EXISTS "OrderItem" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
@@ -90,7 +94,7 @@ const statements = [
     "quantity" INTEGER NOT NULL DEFAULT 1,
     "unitPrice" INTEGER NOT NULL,
     "weight" DOUBLE PRECISION,
-    "pricingType" TEXT NOT NULL DEFAULT 'PER_ITEM',
+    "pricingType" "PricingType" NOT NULL DEFAULT 'PER_ITEM',
     "total" INTEGER NOT NULL,
     CONSTRAINT "OrderItem_pkey" PRIMARY KEY ("id")
   )`,

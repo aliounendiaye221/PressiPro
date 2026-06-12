@@ -14,7 +14,7 @@ export async function GET(
     const { id } = await params;
 
     const order = await prisma.order.findFirst({
-      where: { id, tenantId: session.tenantId },
+      where: { id, tenantId: session.tenantId, deletedAt: null },
       include: {
         customer: true,
         items: {
@@ -49,7 +49,7 @@ export async function PUT(
     const body = await request.json();
 
     const order = await prisma.order.findFirst({
-      where: { id, tenantId: session.tenantId },
+      where: { id, tenantId: session.tenantId, deletedAt: null },
       include: { items: true },
     });
 
@@ -89,7 +89,7 @@ export async function PUT(
       let newTotal = 0;
       const newItems = body.items.map((item: { serviceId: string; quantity?: number; weight?: number }) => {
         const svc = serviceMap.get(item.serviceId)!;
-        const isPerKg = (svc as unknown as { pricingType: string }).pricingType === "PER_KG";
+        const isPerKg = svc.pricingType === "PER_KG";
         const quantity = isPerKg ? 1 : (item.quantity ?? 1);
         const weight = isPerKg ? (item.weight ?? 1) : null;
         const total = isPerKg
@@ -102,7 +102,7 @@ export async function PUT(
           quantity,
           unitPrice: svc.price,
           weight,
-          pricingType: (svc as unknown as { pricingType: string }).pricingType,
+          pricingType: svc.pricingType,
           total,
         };
       });
@@ -110,11 +110,16 @@ export async function PUT(
       // Transaction: delete old items, create new, update totals
       const updated = await prisma.$transaction(async (tx) => {
         await tx.orderItem.deleteMany({ where: { orderId: id } });
+
+        const discountAmount = order.discountAmount ? Math.min(order.discountAmount, newTotal) : 0;
+        const finalTotalAmount = newTotal - discountAmount;
+
         const updatedOrder = await tx.order.update({
           where: { id },
           data: {
             ...updateData,
-            totalAmount: newTotal,
+            discountAmount,
+            totalAmount: finalTotalAmount,
             items: { create: newItems },
           },
           include: {
@@ -179,7 +184,11 @@ export async function DELETE(
     const { id } = await params;
 
     const order = await prisma.order.findFirst({
-      where: { id, tenantId: session.tenantId },
+      where: { id, tenantId: session.tenantId, deletedAt: null },
+      include: {
+        items: true,
+        payments: true,
+      },
     });
 
     if (!order) {
@@ -191,7 +200,11 @@ export async function DELETE(
       return errorResponse("Impossible de supprimer une commande avec des paiements. Annulez d'abord les paiements.", 400);
     }
 
-    await prisma.order.delete({ where: { id } });
+    // Update order with deletedAt date (soft delete)
+    await prisma.order.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
 
     await auditLog({
       tenantId: session.tenantId,
@@ -199,7 +212,42 @@ export async function DELETE(
       action: "ORDER_DELETED",
       entity: "Order",
       entityId: id,
-      details: { code: order.code, totalAmount: order.totalAmount },
+      details: {
+        code: order.code,
+        totalAmount: order.totalAmount,
+        snapshot: {
+          id: order.id,
+          code: order.code,
+          customerId: order.customerId,
+          status: order.status,
+          totalAmount: order.totalAmount,
+          discountAmount: order.discountAmount,
+          discountReason: order.discountReason,
+          paidAmount: order.paidAmount,
+          notes: order.notes,
+          promisedAt: order.promisedAt?.toISOString() || null,
+          createdAt: order.createdAt.toISOString(),
+          updatedAt: order.updatedAt.toISOString(),
+          items: order.items.map((i) => ({
+            id: i.id,
+            serviceId: i.serviceId,
+            name: i.name,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            weight: i.weight,
+            pricingType: i.pricingType,
+            total: i.total,
+          })),
+          payments: order.payments.map((p) => ({
+            id: p.id,
+            amount: p.amount,
+            method: p.method,
+            note: p.note,
+            createdBy: p.createdBy,
+            createdAt: p.createdAt.toISOString(),
+          })),
+        },
+      },
     });
 
     return successResponse({ ok: true });

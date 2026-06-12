@@ -6,6 +6,7 @@ import { canTransition, isRollback } from "@/lib/order-status";
 import { auditLog } from "@/lib/audit";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 import { OrderStatus } from "@prisma/client";
+import { warmOrderReceiptPdf } from "@/lib/receipt/pdf";
 
 export async function PUT(
   request: NextRequest,
@@ -19,7 +20,7 @@ export async function PUT(
     const newStatus = data.status as OrderStatus;
 
     const order = await prisma.order.findFirst({
-      where: { id, tenantId: session.tenantId },
+      where: { id, tenantId: session.tenantId, deletedAt: null },
     });
 
     if (!order) {
@@ -33,9 +34,16 @@ export async function PUT(
       );
     }
 
-    // Rollback requires ADMIN
-    if (isRollback(order.status, newStatus) && session.role !== "ADMIN") {
-      return errorResponse("Seul un administrateur peut annuler un statut", 403);
+    // Rollback requires ADMIN or SUPER_ADMIN
+    if (
+      isRollback(order.status, newStatus) &&
+      session.role !== "ADMIN" &&
+      session.role !== "SUPER_ADMIN"
+    ) {
+      return errorResponse(
+        "Seul un administrateur ou un super-administrateur peut annuler un statut",
+        403
+      );
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -65,6 +73,19 @@ export async function PUT(
       entityId: id,
       details: { from: order.status, to: newStatus, note: data.note },
     });
+
+    if (newStatus === "PRET") {
+      await warmOrderReceiptPdf({
+        tenantId: session.tenantId,
+        orderId: id,
+      }).catch((error) => {
+        console.warn("[ReceiptWarmup] PRET status warmup failed", {
+          tenantId: session.tenantId,
+          orderId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
 
     return successResponse(updated);
   } catch (error) {

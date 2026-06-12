@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Zap, Shield, Smartphone, BarChart3, Clock, Users, Receipt,
   ChevronRight, Check, Star, ArrowRight, Menu, X, TrendingUp,
-  Package, Bell, QrCode, Globe, HeadphonesIcon, Weight
+  Package, Bell, Globe, HeadphonesIcon, Weight
 } from "lucide-react";
 
 /* ─── Counter animation ──────────────────────────────────── */

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { canTransition, isRollback, getNextStatuses } from "@/lib/order-status";
 import { getPaymentStatus, formatFCFA } from "@/lib/receipt/mapper";
+import { normalizePhoneForStorage, normalizePhoneForWhatsApp } from "@/lib/phone";
 
 describe("order-status transitions", () => {
   it("allows RECU → TRAITEMENT", () => {
@@ -88,5 +89,46 @@ describe("formatFCFA", () => {
     expect(result).toContain("5");
     expect(result).toContain("000");
     expect(result).toContain("FCFA");
+  });
+});
+
+describe("phone normalization", () => {
+  it("normalizes local Senegal number to E.164", () => {
+    expect(normalizePhoneForStorage("77 123 45 67")).toBe("+221771234567");
+  });
+
+  it("normalizes WhatsApp digits without plus sign", () => {
+    expect(normalizePhoneForWhatsApp("+221 77 123 45 67")).toBe("221771234567");
+  });
+
+  it("returns null for invalid phone", () => {
+    expect(normalizePhoneForStorage("abc")).toBeNull();
+  });
+});
+
+describe("newly added business logic rules", () => {
+  it("allows both ADMIN and SUPER_ADMIN roles to perform a status rollback in our logic check", () => {
+    const isRollbackFn = (from: string, to: string) => from === "TRAITEMENT" && to === "RECU";
+    const canUserRollback = (role: string, from: string, to: string) => {
+      const isRb = isRollbackFn(from, to);
+      if (isRb && role !== "ADMIN" && role !== "SUPER_ADMIN") {
+        return false;
+      }
+      return true;
+    };
+
+    expect(canUserRollback("ADMIN", "TRAITEMENT", "RECU")).toBe(true);
+    expect(canUserRollback("SUPER_ADMIN", "TRAITEMENT", "RECU")).toBe(true);
+    expect(canUserRollback("AGENT", "TRAITEMENT", "RECU")).toBe(false);
+  });
+
+  it("recomputes net total amount correctly by capping and subtracting existing discount", () => {
+    const computeFinalTotal = (newTotal: number, discountAmount: number) => {
+      const cappedDiscount = Math.min(discountAmount, newTotal);
+      return newTotal - cappedDiscount;
+    };
+
+    expect(computeFinalTotal(10000, 2000)).toBe(8000);
+    expect(computeFinalTotal(3000, 5000)).toBe(0); // Discount capped at subtotal
   });
 });

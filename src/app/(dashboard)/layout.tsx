@@ -44,7 +44,7 @@ function Sidebar() {
     <>
       {/* Mobile hamburger */}
       <button
-        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 bg-white/90 backdrop-blur-lg rounded-xl shadow-lg border border-gray-200/50 hover:bg-white transition-all duration-200"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 bg-white rounded-xl shadow-lg border border-gray-200/50 hover:bg-gray-50 transition-all duration-200"
         onClick={() => setMobileOpen(!mobileOpen)}
         aria-label="Menu"
       >
@@ -58,7 +58,7 @@ function Sidebar() {
       {/* Overlay */}
       {mobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/20 backdrop-blur-sm z-30 transition-opacity"
+          className="lg:hidden fixed inset-0 bg-black/40 z-30 transition-opacity"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -66,7 +66,7 @@ function Sidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed lg:static inset-y-0 left-0 z-40 w-[280px] bg-white/80 backdrop-blur-xl border-r border-gray-200/60 flex flex-col transition-transform duration-300 lg:translate-x-0",
+          "fixed lg:static inset-y-0 left-0 z-40 w-[280px] bg-white border-r border-gray-200/60 flex flex-col transition-transform duration-300 lg:translate-x-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -79,6 +79,7 @@ function Sidebar() {
             aria-label="Retourner à la page d'accueil PressiPro"
           >
             {tenant?.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={tenant.logoUrl}
                 alt={tenant.name}
@@ -196,10 +197,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-50/50 overflow-x-hidden">
+    <div className="min-h-screen flex bg-gray-50 overflow-x-hidden">
       <Sidebar />
       <main className="flex-1 min-w-0 min-h-screen">
-        <div className="pt-16 lg:pt-8 px-4 pb-4 sm:px-6 lg:px-8 max-w-7xl mx-auto animate-fade-in">
+        <div className="pt-16 lg:pt-8 px-4 pb-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
           {children}
         </div>
       </main>

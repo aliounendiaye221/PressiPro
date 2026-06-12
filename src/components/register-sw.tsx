@@ -15,17 +15,26 @@ type BeforeInstallPromptEvent = Event & {
 
 export function RegisterSW() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [isOffline, setIsOffline] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const standalone = window.matchMedia("(display-mode: standalone)").matches;
+    const iosStandalone =
+      "standalone" in window.navigator &&
+      Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+    return standalone || iosStandalone;
+  });
+  const [isOffline, setIsOffline] = useState(() =>
+    typeof navigator !== "undefined" ? !navigator.onLine : false
+  );
   const [isInstalling, setIsInstalling] = useState(false);
-  const [pendingActions, setPendingActions] = useState(0);
+  const [pendingActions, setPendingActions] = useState(() => getOfflineQueueCount());
   const [isSyncingQueue, setIsSyncingQueue] = useState(false);
   const [queueError, setQueueError] = useState(false);
 
   useEffect(() => {
-    setIsOffline(!navigator.onLine);
-    setPendingActions(getOfflineQueueCount());
-
     const updateConnectionStatus = () => {
       setIsOffline(!navigator.onLine);
     };
@@ -80,8 +89,10 @@ export function RegisterSW() {
       });
     }
 
-    updateInstallState();
-    void syncQueue();
+    const syncTimer = window.setTimeout(() => {
+      void syncQueue();
+    }, 0);
+
     const unsubscribeQueue = subscribeOfflineQueue(handleQueueUpdate);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", updateConnectionStatus);
@@ -89,6 +100,7 @@ export function RegisterSW() {
     window.addEventListener("appinstalled", handleInstalled);
 
     return () => {
+      window.clearTimeout(syncTimer);
       unsubscribeQueue();
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", updateConnectionStatus);
@@ -125,7 +137,7 @@ export function RegisterSW() {
   return (
     <div className="fixed bottom-4 right-4 z-[70] flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
       {(pendingActions > 0 || isSyncingQueue || queueError) && (
-        <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/95 px-3 py-2 text-xs font-semibold text-sky-700 shadow-lg backdrop-blur">
+        <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 shadow-lg">
           <RefreshCw className={`h-4 w-4 ${isSyncingQueue ? "animate-spin" : ""}`} />
           <span>
             {isSyncingQueue
@@ -140,7 +152,7 @@ export function RegisterSW() {
       )}
 
       {isOffline && (
-        <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white/95 px-3 py-2 text-xs font-semibold text-amber-700 shadow-lg backdrop-blur">
+        <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 shadow-lg">
           <WifiOff className="h-4 w-4" />
           <span>Mode hors connexion</span>
         </div>

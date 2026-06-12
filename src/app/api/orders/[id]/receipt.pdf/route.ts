@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { renderToBuffer } from "@react-pdf/renderer";
-import React from "react";
-import { prisma } from "@/lib/db";
 import { requireTenantSession } from "@/lib/tenant";
 import { handleApiError, errorResponse } from "@/lib/api-utils";
 import { auditLog } from "@/lib/audit";
-import { ReceiptPDF } from "@/lib/receipt/template";
-import { formatDate, getPaymentStatus } from "@/lib/receipt/mapper";
-import { generateQRDataURL } from "@/lib/receipt/qr";
+import { getOrderReceiptData, getOrderReceiptPdf } from "@/lib/receipt/pdf";
 
 export async function GET(
   request: NextRequest,
@@ -22,74 +17,29 @@ export async function GET(
     const isPreview = searchParams.get("preview") === "1";
     const isJson = searchParams.get("json") === "1";
 
-    const order = await prisma.order.findFirst({
-      where: { id, tenantId: session.tenantId },
-      include: {
-        customer: true,
-        items: true,
-        tenant: {
-          select: {
-            name: true,
-            address: true,
-            phone: true,
-            logoUrl: true,
-            brandPrimaryColor: true,
-            brandAccentColor: true,
-            waveNumber: true,
-            omNumber: true,
-          },
-        },
-      },
+    if (isJson) {
+      const receiptDataResult = await getOrderReceiptData({
+        tenantId: session.tenantId,
+        orderId: id,
+        isDuplicate,
+      });
+
+      if (!receiptDataResult) {
+        return errorResponse("Commande introuvable", 404);
+      }
+
+      return NextResponse.json(receiptDataResult.receiptData);
+    }
+
+    const receiptPdf = await getOrderReceiptPdf({
+      tenantId: session.tenantId,
+      orderId: id,
+      isDuplicate,
     });
 
-    if (!order) {
+    if (!receiptPdf) {
       return errorResponse("Commande introuvable", 404);
     }
-
-    const amountDue = order.totalAmount - order.paidAmount;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const qrText = `${appUrl}/orders/${order.id}`;
-    const qrDataUrl = await generateQRDataURL(qrText);
-
-    const receiptData = {
-      tenantName: order.tenant.name,
-      tenantLogoUrl: order.tenant.logoUrl,
-      tenantPrimaryColor: order.tenant.brandPrimaryColor,
-      tenantAccentColor: order.tenant.brandAccentColor,
-      tenantAddress: order.tenant.address,
-      tenantPhone: order.tenant.phone,
-      tenantWaveNumber: order.tenant.waveNumber,
-      tenantOmNumber: order.tenant.omNumber,
-      orderCode: order.code,
-      orderDate: formatDate(order.createdAt.toISOString()),
-      promisedDate: order.promisedAt
-        ? formatDate(order.promisedAt.toISOString())
-        : null,
-      customerName: order.customer.name,
-      customerPhone: order.customer.phone,
-      items: order.items.map((item: { name: string; quantity: number; unitPrice: number; total: number; weight: number | null; pricingType: string }) => ({
-        name: item.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        total: item.total,
-        weight: item.weight,
-        pricingType: item.pricingType,
-      })),
-      totalAmount: order.totalAmount,
-      paidAmount: order.paidAmount,
-      amountDue,
-      paymentStatus: getPaymentStatus(order.totalAmount, order.paidAmount),
-      qrDataUrl,
-      isDuplicate,
-    };
-
-    if (isJson) {
-      return NextResponse.json(receiptData);
-    }
-
-    const pdfBuffer = await renderToBuffer(
-      React.createElement(ReceiptPDF, { data: receiptData }) as any
-    );
 
     if (!isPreview) {
       await auditLog({
@@ -97,16 +47,21 @@ export async function GET(
         userId: session.userId,
         action: isDuplicate ? "RECEIPT_REPRINT" : "RECEIPT_PRINT",
         entity: "Order",
-        entityId: order.id,
-        details: { code: order.code, isDuplicate },
+        entityId: receiptPdf.orderId,
+        details: { code: receiptPdf.orderCode, isDuplicate },
       });
     }
 
-    return new NextResponse(new Uint8Array(pdfBuffer), {
+    const pdfBytes = Uint8Array.from(receiptPdf.pdfBuffer);
+    const pdfBlob = new Blob([pdfBytes], {
+      type: "application/pdf",
+    });
+
+    return new NextResponse(pdfBlob, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `${isDownload ? "attachment" : "inline"}; filename="recu-${order.code}.pdf"`,
+        "Content-Disposition": `${isDownload ? "attachment" : "inline"}; filename="recu-${receiptPdf.orderCode}.pdf"`,
         "Cache-Control": "no-store",
       },
     });

@@ -7,6 +7,7 @@ import { generateOrderCode } from "@/lib/order-code";
 import { auditLog } from "@/lib/audit";
 import { PaymentMethod } from "@prisma/client";
 import { parsePagination } from "@/lib/pagination";
+import { warmOrderReceiptPdf } from "@/lib/receipt/pdf";
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") || "";
     const { page, limit } = parsePagination(searchParams, { maxLimit: 50 });
 
-    const where: Record<string, unknown> = { tenantId: session.tenantId };
+    const where: Record<string, unknown> = { tenantId: session.tenantId, deletedAt: null };
 
     if (status && ["RECU", "TRAITEMENT", "PRET", "LIVRE"].includes(status)) {
       where.status = status;
@@ -76,17 +77,16 @@ export async function POST(request: NextRequest) {
     }
 
     const serviceMap = new Map(services.map((s) => [s.id, s]));
-    let totalAmount = 0;
+    let itemsTotal = 0;
     const orderItems = data.items.map((item) => {
-      const service = serviceMap.get(item.serviceId)!;
-      const svc = service as { id: string; name: string; price: number; pricingType: string };
+      const svc = serviceMap.get(item.serviceId)!;
       const isPerKg = svc.pricingType === "PER_KG";
       const quantity = isPerKg ? 1 : (item.quantity ?? 1);
       const weight = isPerKg ? (item.weight ?? 1) : null;
       const total = isPerKg
         ? Math.round(svc.price * (weight ?? 1))
         : svc.price * quantity;
-      totalAmount += total;
+      itemsTotal += total;
       return {
         serviceId: svc.id,
         name: svc.name,
@@ -98,53 +98,91 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    const code = await generateOrderCode(session.tenantId);
+    // Handle discount
+    const discountAmount = data.discountAmount ? Math.min(data.discountAmount, itemsTotal) : 0;
+    const totalAmount = itemsTotal - discountAmount;
+    const discountReason = data.discountReason || null;
 
     // Determine advance payment
     const advanceAmount = data.advanceAmount && data.advanceAmount > 0
       ? Math.min(data.advanceAmount, totalAmount)
       : 0;
 
-    const order = await prisma.$transaction(async (tx) => {
-      const newOrder = await tx.order.create({
-        data: {
-          tenantId: session.tenantId,
-          code,
-          customerId: data.customerId,
-          totalAmount,
-          paidAmount: advanceAmount,
-          notes: data.notes || null,
-          promisedAt: data.promisedAt ? new Date(data.promisedAt) : null,
-          items: { create: orderItems },
-          statusHistory: {
-            create: {
-              fromStatus: null,
-              toStatus: "RECU",
-              changedBy: session.userId,
+    let order;
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        const code = await generateOrderCode(session.tenantId);
+        order = await prisma.$transaction(async (tx) => {
+          const newOrder = await tx.order.create({
+            data: {
+              tenantId: session.tenantId,
+              code,
+              customerId: data.customerId,
+              totalAmount,
+              discountAmount,
+              discountReason,
+              paidAmount: advanceAmount,
+              notes: data.notes || null,
+              promisedAt: data.promisedAt ? new Date(data.promisedAt) : null,
+              items: { create: orderItems },
+              statusHistory: {
+                create: {
+                  fromStatus: null,
+                  toStatus: "RECU",
+                  changedBy: session.userId,
+                },
+              },
             },
-          },
-        },
-        include: {
-          customer: { select: { id: true, name: true, phone: true } },
-          items: true,
-        },
-      });
+            include: {
+              customer: { select: { id: true, name: true, phone: true } },
+              items: true,
+            },
+          });
 
-      // Create advance payment if any
-      if (advanceAmount > 0) {
-        await tx.payment.create({
-          data: {
-            tenantId: session.tenantId,
-            orderId: newOrder.id,
-            amount: advanceAmount,
-            method: (data.advanceMethod as PaymentMethod) || "CASH",
-            createdBy: session.userId,
-          },
+          // Create advance payment if any
+          if (advanceAmount > 0) {
+            await tx.payment.create({
+              data: {
+                tenantId: session.tenantId,
+                orderId: newOrder.id,
+                amount: advanceAmount,
+                method: (data.advanceMethod as PaymentMethod) || "CASH",
+                createdBy: session.userId,
+              },
+            });
+          }
+
+          return newOrder;
         });
-      }
 
-      return newOrder;
-    });
+        break;
+      } catch (error: unknown) {
+        const prismaError = error as {
+          code?: string;
+          meta?: { target?: string | string[] };
+        };
+        const target = prismaError.meta?.target;
+        const targetText = Array.isArray(target) ? target.join(",") : String(target ?? "");
+        const isOrderCodeConflict =
+          prismaError.code === "P2002"
+          && (
+            targetText.length === 0
+            || targetText.includes("Order_tenantId_code_key")
+            || (targetText.includes("tenantId") && targetText.includes("code"))
+          );
+
+        if (isOrderCodeConflict && retries > 1) {
+          retries--;
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (!order) {
+      throw new Error("Failed to generate a unique order code. Please try again.");
+    }
 
     await auditLog({
       tenantId: session.tenantId,
@@ -152,7 +190,18 @@ export async function POST(request: NextRequest) {
       action: "ORDER_CREATED",
       entity: "Order",
       entityId: order.id,
-      details: { code, totalAmount, advanceAmount },
+      details: { code: order.code, totalAmount, advanceAmount },
+    });
+
+    await warmOrderReceiptPdf({
+      tenantId: session.tenantId,
+      orderId: order.id,
+    }).catch((error) => {
+      console.warn("[ReceiptWarmup] Order creation warmup failed", {
+        tenantId: session.tenantId,
+        orderId: order.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
 
     return successResponse(order, 201);

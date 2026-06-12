@@ -1,0 +1,35 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "deploy-vercel-prod",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"deploy:vercel:oneshot-migrate"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "deploy-vercel-prod",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"deploy:vercel:oneshot-migrate"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "deploy-vercel-prod",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"deploy:vercel:oneshot-migrate"
+			],
+			"isBackground": false
+		}
+	]
+}

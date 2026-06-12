@@ -34,7 +34,7 @@ export async function GET() {
       prisma.tenant.count(),
       prisma.user.count(),
       prisma.user.count({ where: { active: true } }),
-      prisma.order.count(),
+      prisma.order.count({ where: { deletedAt: null } }),
       prisma.customer.count(),
       prisma.payment.aggregate({
         where: { createdAt: { gte: startOfMonth } },
@@ -80,10 +80,11 @@ export async function GET() {
       }),
       prisma.order.groupBy({
         by: ["status"],
+        where: { deletedAt: null },
         _count: true,
       }),
-      prisma.order.count({ where: { createdAt: { gte: startOfMonth } } }),
-      prisma.order.count({ where: { createdAt: { gte: startOfPrevMonth, lte: endOfPrevMonth } } }),
+      prisma.order.count({ where: { createdAt: { gte: startOfMonth }, deletedAt: null } }),
+      prisma.order.count({ where: { createdAt: { gte: startOfPrevMonth, lte: endOfPrevMonth }, deletedAt: null } }),
     ]);
 
     // Per-tenant revenue this month + all-time

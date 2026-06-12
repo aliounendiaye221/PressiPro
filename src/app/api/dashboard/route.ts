@@ -35,6 +35,7 @@ export async function GET() {
       where: {
         tenantId,
         status: { not: "LIVRE" },
+        deletedAt: null,
       },
       select: { totalAmount: true, paidAmount: true },
     });
@@ -49,13 +50,14 @@ export async function GET() {
         tenantId,
         promisedAt: { lt: now },
         status: { notIn: ["LIVRE"] },
+        deletedAt: null,
       },
     });
 
     // Orders by status
     const ordersByStatus = await prisma.order.groupBy({
       by: ["status"],
-      where: { tenantId },
+      where: { tenantId, deletedAt: null },
       _count: true,
     });
 
@@ -75,6 +77,46 @@ export async function GET() {
       },
       orderBy: { createdAt: "desc" },
       take: 10,
+    });
+
+    // Urgent Orders (Late)
+    const urgentOrders = await prisma.order.findMany({
+      where: {
+        tenantId,
+        promisedAt: { lt: now },
+        status: { notIn: ["PRET", "LIVRE"] },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        code: true,
+        promisedAt: true,
+        status: true,
+        customer: { select: { name: true, phone: true } },
+      },
+      take: 5,
+      orderBy: { promisedAt: "asc" },
+    });
+
+    // Today's Orders (Deliverable today)
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+    const todaysOrders = await prisma.order.findMany({
+      where: {
+        tenantId,
+        promisedAt: { gte: startOfDay, lt: endOfDay },
+        status: { not: "LIVRE" },
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        code: true,
+        promisedAt: true,
+        status: true,
+        customer: { select: { name: true, phone: true } },
+      },
+      take: 5,
+      orderBy: { promisedAt: "asc" },
     });
 
     return successResponse({
@@ -101,6 +143,8 @@ export async function GET() {
         customerName: p.order.customer.name,
         createdAt: p.createdAt,
       })),
+      urgentOrders,
+      todaysOrders,
     });
   } catch (error) {
     return handleApiError(error);

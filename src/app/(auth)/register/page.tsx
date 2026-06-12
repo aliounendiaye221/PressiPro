@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import Link from "next/link";
-import { Store, User, Mail, Lock, Phone, MapPin, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -47,7 +47,7 @@ export default function RegisterPage() {
           <p className="text-gray-500 mt-2">Créez votre pressing en ligne</p>
         </div>
 
-        <div className="card backdrop-blur-xl bg-white/80 border-white/50 shadow-xl">
+        <div className="card bg-white shadow-xl">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">Inscription</h2>
 
           {error && (

@@ -13,7 +13,7 @@ export async function GET(
     const { id } = await params;
 
     const order = await prisma.order.findFirst({
-      where: { id, tenantId: session.tenantId },
+      where: { id, tenantId: session.tenantId, deletedAt: null },
       select: { id: true, tenantId: true },
     });
 

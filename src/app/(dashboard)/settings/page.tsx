@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck, Shield } from "lucide-react";
+import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck } from "lucide-react";
 import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
 
@@ -51,6 +51,7 @@ export default function SettingsPage() {
 
   // Set default tab when user loads
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isAdmin) setTab("pressing");
   }, [isAdmin]);
 
@@ -171,6 +172,7 @@ export default function SettingsPage() {
   }, [isAdmin]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchServices();
     fetchUsers();
     fetchTenant();
@@ -423,10 +425,11 @@ export default function SettingsPage() {
 
               {tenantForm.logoUrl ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={tenantForm.logoUrl} alt="Logo du pressing" className="h-16 w-16 rounded-2xl object-cover ring-1 ring-gray-200" />
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Aperçu du logo</p>
-                    <p className="text-xs text-gray-500">Ce logo sera affiché dans l'application et sur les reçus PDF.</p>
+                    <p className="text-xs text-gray-500">Ce logo sera affiché dans l&apos;application et sur les reçus PDF.</p>
                   </div>
                 </div>
               ) : null}

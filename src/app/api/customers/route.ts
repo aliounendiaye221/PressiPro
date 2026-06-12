@@ -4,6 +4,7 @@ import { requireTenantSession } from "@/lib/tenant";
 import { customerSchema } from "@/lib/validators";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 import { parsePagination } from "@/lib/pagination";
+import { buildPhoneLookupCandidates } from "@/lib/phone";
 
 export async function GET(request: NextRequest) {
   try {
@@ -45,10 +46,16 @@ export async function POST(request: NextRequest) {
     const session = await requireTenantSession();
     const body = await request.json();
     const data = customerSchema.parse(body);
+    const phoneCandidates = buildPhoneLookupCandidates(data.phone);
+    const phonesToCheck = phoneCandidates.length > 0 ? phoneCandidates : [data.phone];
 
     // Check duplicate phone for this tenant
-    const existing = await prisma.customer.findUnique({
-      where: { tenantId_phone: { tenantId: session.tenantId, phone: data.phone } },
+    const existing = await prisma.customer.findFirst({
+      where: {
+        tenantId: session.tenantId,
+        OR: phonesToCheck.map((phone) => ({ phone })),
+      },
+      select: { id: true },
     });
     if (existing) {
       return errorResponse("Un client avec ce numéro existe déjà", 409);

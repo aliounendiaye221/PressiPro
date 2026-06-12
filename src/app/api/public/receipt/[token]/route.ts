@@ -29,6 +29,7 @@ export async function GET(
       where: {
         id: payload.orderId,
         tenantId: payload.tenantId,
+        deletedAt: null,
       },
       include: {
         customer: true,
@@ -82,6 +83,8 @@ export async function GET(
         pricingType: item.pricingType,
       })),
       totalAmount: order.totalAmount,
+      discountAmount: order.discountAmount,
+      discountReason: order.discountReason,
       paidAmount: order.paidAmount,
       amountDue,
       paymentStatus: getPaymentStatus(order.totalAmount, order.paidAmount),

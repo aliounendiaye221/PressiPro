@@ -10,6 +10,23 @@ export function handleApiError(error: unknown) {
     const messages = error.errors.map((e) => `${e.path.join(".")}: ${e.message}`);
     return errorResponse(messages.join(", "), 400);
   }
+
+  const prismaLikeError = error as { name?: string; message?: string; code?: string };
+  const prismaMessage = prismaLikeError?.message || "";
+  const isConnectivityIssue =
+    prismaLikeError?.code === "P1001"
+    || prismaLikeError?.code === "P1017"
+    || prismaLikeError?.name === "PrismaClientInitializationError"
+    || prismaMessage.includes("Can't reach database server")
+    || /connection terminated/i.test(prismaMessage)
+    || /server has closed the connection/i.test(prismaMessage);
+
+  if (
+    isConnectivityIssue
+  ) {
+    return errorResponse("Base de données temporairement indisponible. Réessayez dans quelques instants.", 503);
+  }
+
   if (error instanceof Error) {
     if (error.message === "UNAUTHORIZED") {
       return errorResponse("Non autorisé", 401);

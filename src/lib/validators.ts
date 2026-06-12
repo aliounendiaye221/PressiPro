@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizePhoneForStorage } from "./phone";
 
 const strongPasswordSchema = z
   .string()
@@ -25,13 +26,17 @@ export const loginSchema = z.object({
 });
 
 // ─── Customer ────────────────────────────────────────────────
+const normalizedPhoneSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(30)
+  .transform((value) => normalizePhoneForStorage(value))
+  .refine((value): value is string => Boolean(value), "Numéro de téléphone invalide");
+
 export const customerSchema = z.object({
   name: z.string().min(1).max(100),
-  phone: z
-    .string()
-    .min(9)
-    .max(20)
-    .regex(/^\+?[0-9]+$/, "Numéro de téléphone invalide"),
+  phone: normalizedPhoneSchema,
   email: z.string().email().optional().or(z.literal("")),
   address: z.string().max(200).optional().or(z.literal("")),
   notes: z.string().max(500).optional().or(z.literal("")),
@@ -54,6 +59,8 @@ export const createOrderSchema = z.object({
   promisedAt: z.string().optional(), // ISO date string
   advanceAmount: z.number().int().min(0).optional(),
   advanceMethod: z.enum(["CASH", "OM", "WAVE", "OTHER"]).optional(),
+  discountAmount: z.number().int().min(0).optional(),
+  discountReason: z.string().max(200).optional().or(z.literal("")),
 });
 
 export const updateOrderStatusSchema = z.object({

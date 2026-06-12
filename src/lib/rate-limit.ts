@@ -1,9 +1,27 @@
+/**
+ * ⚠️  IN-MEMORY RATE LIMITER — NOT EFFECTIVE ON SERVERLESS (Vercel)
+ *
+ * Each serverless invocation gets its own memory, so the Map resets
+ * per instance. This provides basic protection in development and
+ * single-instance deployments only.
+ *
+ * For production on Vercel, replace with a persistent store:
+ *   - Upstash Redis (@upstash/ratelimit)
+ *   - Vercel KV
+ *
+ * TODO: migrate to @upstash/ratelimit for production
+ */
+
 type RateLimitRecord = {
   count: number;
   resetAt: number;
 };
 
 const buckets = new Map<string, RateLimitRecord>();
+
+if (process.env.NODE_ENV === "production" && !process.env.NEXT_PHASE) {
+  console.warn("⚠️ Using in-memory rate limiter in production. This is ineffective on serverless (Vercel) and should be replaced with Redis.");
+}
 
 export type RateLimitResult = {
   allowed: boolean;

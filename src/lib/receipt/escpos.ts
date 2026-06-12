@@ -9,6 +9,20 @@ function textToBytes(text: string) {
     return new TextEncoder().encode(removeAccents(text));
 }
 
+type SerialPortLike = {
+    open: (options: { baudRate: number }) => Promise<void>;
+    writable: {
+        getWriter: () => WritableStreamDefaultWriter<Uint8Array>;
+    };
+    close: () => Promise<void>;
+};
+
+type SerialNavigatorLike = Navigator & {
+    serial?: {
+        requestPort: () => Promise<SerialPortLike>;
+    };
+};
+
 export async function printDirectlyPOS(data: ReceiptData): Promise<void> {
     // Web Serial API (Uniquement sur Desktop Chrome/Edge/Opera)
     if (!("serial" in navigator)) {
@@ -17,7 +31,12 @@ export async function printDirectlyPOS(data: ReceiptData): Promise<void> {
 
     try {
         // Demander à l'utilisateur de sélectionner le port USB/Série de l'imprimante
-        const port = await (navigator as any).serial.requestPort();
+        const serialNavigator = navigator as SerialNavigatorLike;
+        if (!serialNavigator.serial) {
+            throw new Error("L'API Web Serial n'est pas disponible sur ce navigateur.");
+        }
+
+        const port = await serialNavigator.serial.requestPort();
         await port.open({ baudRate: 9600 }); // Vitesse standard pour beaucoup de thermiques
 
         const writer = port.writable.getWriter();
@@ -88,7 +107,16 @@ export async function printDirectlyPOS(data: ReceiptData): Promise<void> {
         await writeLine("--------------------------------");
 
         // Totals
-        await writeLine(`TOTAL    : ${Math.round(data.totalAmount)} F`);
+        if (data.discountAmount && data.discountAmount > 0) {
+            await writeLine(`SOUS-TOT : ${Math.round(data.totalAmount + data.discountAmount)} F`);
+            await writeLine(`REDUCTION: -${Math.round(data.discountAmount)} F`);
+            if (data.discountReason) {
+                await writeLine(`(${data.discountReason})`);
+            }
+            await writeLine(`TOTAL NET: ${Math.round(data.totalAmount)} F`);
+        } else {
+            await writeLine(`TOTAL    : ${Math.round(data.totalAmount)} F`);
+        }
         await writeLine(`AVANCE   : ${Math.round(data.paidAmount)} F`);
 
         await write(BOLD_ON);

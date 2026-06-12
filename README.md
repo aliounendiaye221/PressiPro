@@ -183,6 +183,9 @@ public/
 ### Dashboard
 - `GET /api/dashboard` — Stats et KPIs
 
+### Monitoring
+- `GET /api/health/db` — Vérifie la disponibilité de la base (200=up, 503=down)
+
 ## Déploiement
 
 ### Vercel (recommandé)

@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verifyToken } from "@/lib/auth-edge";
+import { verifyToken } from "@/lib/auth-shared";
 
 const PUBLIC_PATHS = [
   "/login",
   "/register",
   "/api/auth/login",
   "/api/auth/register",
+  "/api/health",
   "/share/receipt",
   "/api/public/receipt",
 ];

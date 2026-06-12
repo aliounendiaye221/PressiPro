@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { createCanvas } = require("@napi-rs/canvas");
 const fs = require("fs");
 const path = require("path");

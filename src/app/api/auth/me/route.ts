@@ -1,7 +1,6 @@
 import { createToken, requireSession, tokenCookieOptions } from "@/lib/auth";
 import { successResponse, handleApiError, errorResponse } from "@/lib/api-utils";
 import { prisma } from "@/lib/db";
-import { NextResponse } from "next/server";
 
 export async function GET() {
   try {

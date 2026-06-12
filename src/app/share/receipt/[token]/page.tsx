@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Download, FileText, AlertTriangle, LoaderCircle } from "lucide-react";
 
@@ -26,14 +26,14 @@ export default function ReceiptSharePage() {
   const downloadUrl = useMemo(() => `/api/public/receipt/${token}?download=1`, [token]);
   const inlineUrl = useMemo(() => `/api/public/receipt/${token}`, [token]);
 
-  const triggerDownload = () => {
+  const triggerDownload = useCallback(() => {
     const link = document.createElement("a");
     link.href = downloadUrl;
     link.download = "recu.pdf";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [downloadUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +74,7 @@ export default function ReceiptSharePage() {
     return () => {
       cancelled = true;
     };
-  }, [token, downloadUrl]);
+  }, [token, triggerDownload]);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white px-4 py-10">

@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Plus,
   Printer,
-  Copy,
   MessageCircle,
   Undo2,
   AlertTriangle,
@@ -36,6 +35,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { printDirectlyPOS } from "@/lib/receipt/escpos";
+import { normalizePhoneForWhatsApp } from "@/lib/phone";
 
 interface OrderDetail {
   id: string;
@@ -43,6 +43,8 @@ interface OrderDetail {
   status: string;
   totalAmount: number;
   paidAmount: number;
+  discountAmount: number;
+  discountReason: string | null;
   notes: string | null;
   promisedAt: string | null;
   createdAt: string;
@@ -56,30 +58,6 @@ const ORDER_DETAIL_CACHE_KEY_PREFIX = "order-detail:";
 
 function formatFCFA(n: number) {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " F";
-}
-
-function normalizeWhatsAppNumber(phone: string): string | null {
-  const digits = phone.replace(/[^\d+]/g, "");
-  if (!digits) return null;
-
-  let cleaned = digits;
-  if (cleaned.startsWith("+")) {
-    cleaned = cleaned.slice(1);
-  } else if (cleaned.startsWith("00")) {
-    cleaned = cleaned.slice(2);
-  }
-
-  if (cleaned.startsWith("0") && cleaned.length === 10) {
-    cleaned = `221${cleaned.slice(1)}`;
-  } else if (!cleaned.startsWith("221") && cleaned.length === 9) {
-    cleaned = `221${cleaned}`;
-  }
-
-  if (!/^\d{11,15}$/.test(cleaned)) {
-    return null;
-  }
-
-  return cleaned;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -121,7 +99,7 @@ function buildWhatsAppUrl(normalizedPhone: string, message: string) {
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { user, tenant } = useAuth();
+  const { user } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -141,6 +119,7 @@ export default function OrderDetailPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [editError, setEditError] = useState("");
   const [syncMessage, setSyncMessage] = useState("");
+  const [showWhatsAppGuide, setShowWhatsAppGuide] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
@@ -166,6 +145,7 @@ export default function OrderDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsOffline(!navigator.onLine);
     const syncNetworkState = () => setIsOffline(!navigator.onLine);
     window.addEventListener("online", syncNetworkState);
@@ -569,54 +549,55 @@ export default function OrderDetailPage() {
   const isLate = order.promisedAt && new Date(order.promisedAt) < new Date() && order.status !== "LIVRE";
   const nextStatus = NEXT_STATUS[order.status];
   const nextAction = nextStatus ? STATUS_ACTIONS[order.status] : null;
-
-
-  const buildWhatsAppMessage = (kind: "receipt" | "ready", receiptShareUrl: string) => {
-    const customerName = order.customer.name;
-    const pressingName = (tenant?.name || "Votre pressing").trim();
-    const safeReceiptUrl = receiptShareUrl.trim().replace(/\s+/g, "");
-    const paymentStatusLine = amountDue <= 0
-      ? "Paiement: solde regle"
-      : order.paidAmount > 0
-      ? `Paiement: acompte recu, reste ${formatFCFA(amountDue)}`
-      : `Paiement: non regle, montant du ${formatFCFA(amountDue)}`;
-    const lines: string[] = [];
-
-    lines.push(`${pressingName} | Mise a jour commande`);
-    lines.push("");
-    lines.push(`Bonjour ${customerName},`);
-    lines.push("");
-
+  const buildWhatsAppMessage = (kind: "receipt" | "ready") => {
+    const customerName = order.customer.name.trim() || "cher client";
     if (kind === "ready") {
-      lines.push(`Votre commande *${order.code}* est prete au retrait.`);
-      lines.push("Statut: prete");
-    } else {
-      lines.push(`Votre depot *${order.code}* est bien enregistre.`);
-      lines.push("Statut: enregistre");
+      return `Bonjour ${customerName}, votre commande ${order.code} est prête. Je vous envoie votre reçu en pièce jointe.`;
     }
-
-    lines.push("");
-    lines.push("Resume");
-    lines.push(`- Total: ${formatFCFA(order.totalAmount)}`);
-    lines.push(`- Deja paye: ${formatFCFA(order.paidAmount)}`);
-    lines.push(`- ${paymentStatusLine}`);
-
-    lines.push("");
-    lines.push("Recu securise");
-    lines.push(safeReceiptUrl);
-    lines.push("");
-    lines.push("Ouvrez ce lien pour consulter ou telecharger le recu.");
-    lines.push("");
-    lines.push("Merci de votre confiance,");
-    lines.push(`Equipe ${pressingName}`);
-
-    return lines.join("\n");
+    return `Bonjour ${customerName}, je vous envoie votre reçu en pièce jointe.`;
   };
 
-  const sendWhatsAppDirect = async (kind: "receipt" | "ready") => {
+  const formatDownloadTimestamp = () => {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  };
+
+  const triggerReceiptDownload = (kind: "receipt" | "ready") => {
+    const timestamp = formatDownloadTimestamp();
+    const suffix = kind === "ready" ? "pret" : "recu";
+    const filename = `recu-${order.code}-${suffix}-${timestamp}.pdf`;
+    const url = `/api/orders/${order.id}/receipt.pdf?download=1&t=${Date.now()}`;
+
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = "noopener";
+    anchor.target = "_blank";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  };
+
+  const openWhatsAppConversation = (phone: string, message: string) => {
+    const whatsappUrl = buildWhatsAppUrl(phone, message);
+    const openedWindow = window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+    if (openedWindow && !openedWindow.closed) {
+      return;
+    }
+
+    // Fallback: delay a bit so the download request is not interrupted in strict WebViews.
+    window.setTimeout(() => {
+      window.location.assign(whatsappUrl);
+    }, 250);
+  };
+
+  const sendWhatsAppDirect = (kind: "receipt" | "ready") => {
     setShareLoading(true);
     setEditError("");
     setSyncMessage("");
+    setShowWhatsAppGuide(false);
 
     try {
       if (!order.customer.phone?.trim()) {
@@ -624,31 +605,26 @@ export default function OrderDetailPage() {
         return;
       }
 
-      const normalizedPhone = normalizeWhatsAppNumber(order.customer.phone);
+      const normalizedPhone = normalizePhoneForWhatsApp(order.customer.phone);
       if (!normalizedPhone) {
         setEditError("Numéro client invalide. Corrigez le numéro avant l'envoi WhatsApp.");
         return;
       }
 
-      const linkRes = await fetch(`/api/orders/${order.id}/receipt-share`, {
-        cache: "no-store",
-      });
-      const linkData = await linkRes.json().catch(() => null);
-      if (!linkRes.ok || !linkData?.shareUrl) {
-        throw new Error(linkData?.error || "Reçu indisponible pour le partage");
-      }
+      const message = buildWhatsAppMessage(kind);
+      triggerReceiptDownload(kind);
+      openWhatsAppConversation(normalizedPhone, message);
 
-      const message = buildWhatsAppMessage(kind, linkData.shareUrl as string);
-      const whatsappUrl = buildWhatsAppUrl(normalizedPhone, message);
-      
-      // Utiliser window.location pour une navigation plus fiable que les popups
-      window.location.href = whatsappUrl;
-
-      setSyncMessage("Conversation WhatsApp ouverte directement avec le bon client.");
+      setShowWhatsAppGuide(true);
+      setSyncMessage(
+        kind === "ready"
+          ? "PDF téléchargé. WhatsApp ouvert pour notifier la commande prête."
+          : "PDF téléchargé. Conversation WhatsApp ouverte avec le client."
+      );
     } catch (error) {
-      setEditError(error instanceof Error ? error.message : "Impossible d'ouvrir WhatsApp avec le reçu.");
+      setEditError(error instanceof Error ? error.message : "Impossible d'envoyer sur WhatsApp.");
     } finally {
-      setShareLoading(false);
+      window.setTimeout(() => setShareLoading(false), 250);
     }
   };
 
@@ -664,12 +640,17 @@ export default function OrderDetailPage() {
       const data = await res.json();
       await printDirectlyPOS(data);
       setSyncMessage("Impression thermique commandée avec succès !");
-    } catch (e: any) {
-      if (e.name === "NotFoundError" || e.name === "NotAllowedError" || e.message?.includes("No port selected")) {
+    } catch (error: unknown) {
+      const printableError = error as { name?: string; message?: string };
+      if (
+        printableError.name === "NotFoundError"
+        || printableError.name === "NotAllowedError"
+        || printableError.message?.includes("No port selected")
+      ) {
         // User cancelled picker, don't show error
         return;
       }
-      setEditError(e.message || "Erreur d'impression série.");
+      setEditError(printableError.message || "Erreur d'impression série.");
     } finally {
       setDirectPrintLoading(false);
     }
@@ -679,13 +660,20 @@ export default function OrderDetailPage() {
     <div className="space-y-4">
       {isOffline && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Consultation hors ligne active. Les modifications compatibles seront placees en file d'attente.
+          Consultation hors ligne active. Les modifications compatibles seront placees en file d&apos;attente.
         </div>
       )}
 
       {syncMessage && (
         <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
           {syncMessage}
+        </div>
+      )}
+
+      {showWhatsAppGuide && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <p className="font-semibold">Etape suivante dans WhatsApp</p>
+          <p className="mt-1">Joindre &gt; Document &gt; Téléchargements, puis sélectionnez le reçu PDF.</p>
         </div>
       )}
 
@@ -743,8 +731,22 @@ export default function OrderDetailPage() {
                   ))}
                 </tbody>
                 <tfoot>
+                  {order.discountAmount > 0 && (
+                    <>
+                      <tr className="border-t">
+                        <td colSpan={3} className="py-2 text-gray-500">Sous-total</td>
+                        <td className="py-2 text-right text-gray-500">{formatFCFA(order.totalAmount + order.discountAmount)}</td>
+                      </tr>
+                      <tr className="">
+                        <td colSpan={3} className="py-1 text-red-500">
+                          Réduction {order.discountReason ? `(${order.discountReason})` : ""}
+                        </td>
+                        <td className="py-1 text-right text-red-500">- {formatFCFA(order.discountAmount)}</td>
+                      </tr>
+                    </>
+                  )}
                   <tr className="border-t-2 font-bold">
-                    <td colSpan={3} className="py-2">TOTAL</td>
+                    <td colSpan={3} className="py-2">TOTAL NET</td>
                     <td className="py-2 text-right text-lg">{formatFCFA(order.totalAmount)}</td>
                   </tr>
                 </tfoot>
@@ -933,30 +935,22 @@ export default function OrderDetailPage() {
               <Printer className="w-4 h-4" /> Reçu PDF (Classique)
             </a>
 
-            <a
-              href={`/api/orders/${order.id}/receipt.pdf?duplicate=1`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-secondary w-full text-center block text-xs"
-            >
-              <Copy className="w-3.5 h-3.5" /> Réimprimer (DUPLICATA)
-            </a>
-
             {/* Download PDF */}
-            <a
-              href={`/api/orders/${order.id}/receipt.pdf?download=1`}
-              className="btn-secondary w-full text-center block"
+            <button
+              type="button"
+              onClick={() => triggerReceiptDownload("receipt")}
+              className="btn-secondary w-full text-center flex items-center justify-center gap-2"
             >
               <Download className="w-4 h-4" /> Télécharger la facture
-            </a>
+            </button>
 
-            {/* WhatsApp — conversation directe client + reçu partageable */}
+            {/* WhatsApp — téléchargement du reçu + ouverture directe du contact */}
             <button
               onClick={() => sendWhatsAppDirect("receipt")}
               disabled={shareLoading}
               className="btn-success w-full text-center flex items-center justify-center gap-2"
             >
-              <MessageCircle className="w-4 h-4" /> {shareLoading ? "Ouverture WhatsApp..." : "WhatsApp — Envoyer reçu client"}
+              <MessageCircle className="w-4 h-4" /> {shareLoading ? "Préparation WhatsApp..." : "Envoyer sur WhatsApp"}
             </button>
 
             {order.status === "PRET" && (
@@ -965,7 +959,7 @@ export default function OrderDetailPage() {
                 disabled={shareLoading}
                 className="btn-success w-full text-center flex items-center justify-center gap-2"
               >
-                <MessageCircle className="w-4 h-4" /> {shareLoading ? "Ouverture WhatsApp..." : "WhatsApp — Notifier commande prête"}
+                <MessageCircle className="w-4 h-4" /> {shareLoading ? "Préparation WhatsApp..." : "WhatsApp — Notifier commande prête"}
               </button>
             )}
 

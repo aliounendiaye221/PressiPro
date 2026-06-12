@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const tenantId = searchParams.get("tenantId") || "";
     const { page, limit } = parsePagination(searchParams, { maxLimit: 100 });
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { deletedAt: null };
 
     if (tenantId) {
       where.tenantId = tenantId;

@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { hashPassword, createToken, tokenCookieOptions } from "@/lib/auth";
 import { registerSchema } from "@/lib/validators";

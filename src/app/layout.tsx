@@ -92,7 +92,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   themeColor: "#2563eb",
 };
 
@@ -115,12 +114,6 @@ export default function RootLayout({
       price: "0",
       priceCurrency: "XOF",
       description: "Essai gratuit 14 jours",
-    },
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue: "4.9",
-      ratingCount: "50",
-      bestRating: "5",
     },
     author: {
       "@type": "Person",

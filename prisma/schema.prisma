@@ -122,13 +122,17 @@ model Order {
   code        String      // Code court unique par tenant ex: "P-00123"
   customerId  String
   customer    Customer    @relation(fields: [customerId], references: [id])
-  status      OrderStatus @default(RECU)
-  totalAmount Int         @default(0) // total FCFA
-  paidAmount  Int         @default(0) // cache total payé
-  notes       String?
+  status         OrderStatus @default(RECU)
+  totalAmount    Int         @default(0) // total FCFA
+  discountAmount Int         @default(0) // montant de réduction
+  discountReason String?     // motif de la réduction
+  paidAmount     Int         @default(0) // cache total payé
+  notes          String?
   promisedAt  DateTime?   // date promesse
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
 
   items           OrderItem[]
   payments        Payment[]
@@ -138,22 +142,23 @@ model Order {
   @@index([tenantId])
   @@index([tenantId, code])
   @@index([tenantId, status])
+  @@index([tenantId, status, promisedAt])
   @@index([customerId])
 }
 
 // ─── ORDER ITEM ────────────────────────────────────────────
 model OrderItem {
-  id          String  @id @default(cuid())
+  id          String      @id @default(cuid())
   orderId     String
-  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
   serviceId   String
-  service     Service @relation(fields: [serviceId], references: [id])
-  name        String  // snapshot du nom service au moment du dépôt
-  quantity    Int     @default(1)
-  unitPrice   Int     // snapshot du prix unitaire
-  weight      Float?  // poids en kg (pour tarification au kilo)
-  pricingType String  @default("PER_ITEM") // PER_ITEM ou PER_KG snapshot
-  total       Int     // quantity * unitPrice ou weight * unitPrice
+  service     Service     @relation(fields: [serviceId], references: [id])
+  name        String      // snapshot du nom service au moment du dépôt
+  quantity    Int         @default(1)
+  unitPrice   Int         // snapshot du prix unitaire
+  weight      Float?      // poids en kg (pour tarification au kilo)
+  pricingType PricingType @default(PER_ITEM) // snapshot du type de tarification
+  total       Int         // quantity * unitPrice ou weight * unitPrice
 
   @@index([orderId])
 }

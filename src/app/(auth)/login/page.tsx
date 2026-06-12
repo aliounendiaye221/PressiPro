@@ -38,7 +38,7 @@ export default function LoginPage() {
           <p className="text-gray-500 mt-2">Gestion de pressing simplifiée</p>
         </div>
 
-        <div className="card backdrop-blur-xl bg-white/80 border-white/50 shadow-xl">
+        <div className="card bg-white shadow-xl">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">Connexion</h2>
 
           {error && (

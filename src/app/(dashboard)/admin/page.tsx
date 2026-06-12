@@ -8,8 +8,8 @@ import {
   CreditCard, Banknote, Smartphone, Wallet, UserCheck,
   ArrowUpRight, CalendarDays, Activity, Globe, Shield,
   ChevronRight, DollarSign, Search, ChevronLeft,
-  Package, Eye, Phone, Mail, MapPin, BarChart3,
-  Filter, RefreshCw, Hash, Trash2, Power, Crown,
+  Package, Phone, Mail, MapPin, BarChart3,
+  Filter, Trash2, Power, Crown,
 } from "lucide-react";
 
 /* ─── Types ─── */
@@ -191,6 +191,7 @@ export default function AdminPage() {
   const [customersSearch, setCustomersSearch] = useState("");
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customersTenantFilter, setCustomersTenantFilter] = useState("");
+  const [hasLoadedCustomers, setHasLoadedCustomers] = useState(false);
 
   // Tenant management state
   const [tenantAction, setTenantAction] = useState<{ id: string; type: "delete" | "sub" | "toggle" } | null>(null);
@@ -205,6 +206,7 @@ export default function AdminPage() {
   const [ordersStatusFilter, setOrdersStatusFilter] = useState("");
   const [ordersTenantFilter, setOrdersTenantFilter] = useState("");
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [hasLoadedOrders, setHasLoadedOrders] = useState(false);
 
   useEffect(() => {
     if (user && user.role !== "SUPER_ADMIN") {
@@ -228,6 +230,7 @@ export default function AdminPage() {
       setCustomers(data.customers || []);
       setCustomersTotal(data.total || 0);
       setCustomersPage(page);
+      setHasLoadedCustomers(true);
     } finally {
       setCustomersLoading(false);
     }
@@ -245,6 +248,7 @@ export default function AdminPage() {
       setOrders(data.orders || []);
       setOrdersTotal(data.total || 0);
       setOrdersPage(page);
+      setHasLoadedOrders(true);
     } finally {
       setOrdersLoading(false);
     }
@@ -309,13 +313,21 @@ export default function AdminPage() {
 
   // Load tab data when switching
   useEffect(() => {
-    if (activeTab === "customers" && customers.length === 0 && !customersLoading) {
+    if (activeTab === "customers" && !hasLoadedCustomers) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchCustomers();
     }
-    if (activeTab === "orders" && orders.length === 0 && !ordersLoading) {
+    if (activeTab === "orders" && !hasLoadedOrders) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchOrders();
     }
-  }, [activeTab]);
+  }, [
+    activeTab,
+    hasLoadedCustomers,
+    hasLoadedOrders,
+    fetchCustomers,
+    fetchOrders,
+  ]);
 
   if (loading) {
     return (
@@ -1258,7 +1270,7 @@ function KpiCard({ icon, value, label, gradient, shadow, sub, valueClass }: {
       <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full blur-xl" />
       <div className="absolute bottom-0 right-0 w-16 h-16 bg-white/5 rounded-tl-3xl" />
       <div className="relative">
-        <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center mb-3">
+        <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/25 rounded-xl flex items-center justify-center mb-3">
           {icon}
         </div>
         <p className={`font-bold ${valueClass || "text-2xl sm:text-3xl"}`}>{value}</p>

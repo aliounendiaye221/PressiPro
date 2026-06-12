@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Edit3, Save, X, Package } from "lucide-react";
+import { ArrowLeft, Edit3, Save, X } from "lucide-react";
 
 interface CustomerDetail {
   id: string;
@@ -55,7 +55,13 @@ export default function CustomerDetailPage() {
     setLoading(false);
   }, [id]);
 
-  useEffect(() => { fetchCustomer(); }, [fetchCustomer]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchCustomer();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [fetchCustomer]);
 
   const saveEdit = async () => {
     setError("");

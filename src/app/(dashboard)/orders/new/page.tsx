@@ -316,7 +316,7 @@ export default function NewOrderPage() {
           <div className="card">
             <h2 className="font-semibold mb-3 flex items-center gap-2"><Search className="w-4 h-4 text-primary-600" /> Client</h2>
             {selectedCustomer ? (
-              <div className="flex items-center justify-between bg-gradient-to-r from-primary-50 to-primary-100/50 p-3 rounded-xl">
+              <div className="flex items-center justify-between bg-primary-50 p-3 rounded-xl border border-primary-100">
                 <div>
                   <p className="font-medium text-primary-900">{selectedCustomer.name}</p>
                   <p className="text-sm text-primary-600">{selectedCustomer.phone}</p>
@@ -443,7 +443,7 @@ export default function NewOrderPage() {
                 <button
                   key={s.id}
                   onClick={() => addToCart(s)}
-                  className="relative flex flex-col items-center justify-center p-3 bg-gradient-to-br from-primary-50 via-white to-primary-100/40 hover:from-primary-100 hover:to-primary-200/60 border border-primary-100/60 hover:border-primary-300 rounded-2xl text-center transition-all duration-300 min-h-[76px] group hover:shadow-lg hover:shadow-primary-500/10 active:scale-[0.97] hover:-translate-y-0.5"
+                  className="relative flex flex-col items-center justify-center p-3 bg-gradient-to-br from-primary-50 to-white hover:bg-primary-50 border border-primary-100 hover:border-primary-300 rounded-2xl text-center transition-transform duration-200 min-h-[76px] group hover:shadow-md active:scale-95"
                 >
                   <span className="text-sm font-medium leading-tight group-hover:text-primary-700">{s.name}</span>
                   <span className="text-xs text-gray-500 mt-0.5">

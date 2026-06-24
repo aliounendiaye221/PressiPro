@@ -212,7 +212,17 @@ COPY --from=builder /app/prisma ./prisma
 EXPOSE 3000
 CMD ["npm", "start"]
 ```
+Ce projet a été réalisé par une équipe de 9 développeurs. Chaque membre a contribué au succès de **PressiPro** :
 
+* **Alioune Ndiaye**
+* **Ndioba Niasse**
+* **Ousmane Diop**
+* **Saliou Kande**
+* **Ndeye Gnima Sagna**
+* **Jean Gomis**
+* **Fatou Bintou Dieng**
+* **Keba Ibrahima Seydi**
+* **Ndack Thiam**
 ## Licence
 
 Propriétaire — Tous droits réservés.

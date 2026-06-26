@@ -2,7 +2,7 @@
 
 Ce projet a été réalisé par une équipe de 9 personnes. Chaque membre a contribué aux domaines suivants :
 
-1. [Prénom/Nom 1] : Architecture système et base de données
+1. Saliou Kande (saliou.kande@unchk.edu.sn) : Architecture système et base de données
 2. Ndioba NIASSE (ndioba.niasse@unchk.edu.sn): Développement Frontend - Interface d'accueil 
 3. Jean Gomis (jean.gomis@unchk.edu.sn) : Développement Frontend - Gestion des profils
 4. Ousmane DIOP (ousmane.diop31@unchk.edu.sn) : Développement Backend - Système d'authentification

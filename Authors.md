@@ -9,5 +9,5 @@ Ce projet a été réalisé par une équipe de 9 personnes. Chaque membre a cont
 5. Ndack Thiam(ndack.thiam@unchk.edu.sn) : Développement Backend - Intégration API
 6. Keba Ibrahima Seydi(kebaibrahima.seydi@unchk.edu.sn) : Assurance qualité et tests unitaires
 7. Fatou Bintou Dieng (fatoubintou.dieng2@unchk.edu.sn): Rédaction de la documentation technique
-8. Ndeye gnima sagna ndeyegnima.sagna@unchk.edu.sn: Design, Assets graphiques et UI/UX
-9. [Prénom/Nom 9] : Déploiement et préparation du rapport de soutenance
+8. Ndeye gnima sagna (ndeyegnima.sagna@unchk.edu.sn): Design, Assets graphiques et UI/UX
+9. Alioune Ndiaye (alioune.ndiaye29@unchk.edu.sn): Déploiement et préparation du rapport de soutenance

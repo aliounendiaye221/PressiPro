@@ -1,4 +1,4 @@
-const CACHE_NAME = "pressipro-v5";
+const CACHE_NAME = "pressipro-v6";
 const OFFLINE_URL = "/offline";
 
 // App shell: pages that should work offline

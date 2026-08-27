@@ -318,7 +318,6 @@ export default function AdminPage() {
       fetchCustomers();
     }
     if (activeTab === "orders" && !hasLoadedOrders) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchOrders();
     }
   }, [

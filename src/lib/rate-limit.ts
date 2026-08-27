@@ -90,9 +90,7 @@ async function getUpstashLimiter(limit: number, windowMs: number) {
   if (!env) return null;
 
   try {
-    // @ts-expect-error -- optional dependency at runtime if not yet installed
     const { Ratelimit } = await import("@upstash/ratelimit");
-    // @ts-expect-error -- optional dependency at runtime if not yet installed
     const { Redis } = await import("@upstash/redis");
 
     if (!upstashLimiterCache) {

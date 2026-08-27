@@ -96,12 +96,12 @@ export async function printDirectlyPOS(data: ReceiptData): Promise<void> {
         // Items
         for (const item of data.items) {
             const qtyStr = item.pricingType === "PER_KG" && item.weight ? `${item.weight}kg` : `x${item.quantity}`;
-            await writeLine(`${item.name} ${qtyStr}`);
-
-            // Aligner le prix à droite (approximation 32 chars)
-            const priceStr = Math.round(item.total).toString() + " F";
-            const spaces = Math.max(0, 32 - priceStr.length);
-            await writeLine(" ".repeat(spaces) + priceStr);
+            const puStr = `@ ${Math.round(item.unitPrice)} F`;
+            await writeLine(`${item.name}`);
+            const lineDetail = `${qtyStr} ${puStr}`;
+            const totalStr = Math.round(item.total).toString() + " F";
+            const spaces = Math.max(1, 32 - (lineDetail.length + totalStr.length));
+            await writeLine(`${lineDetail}${" ".repeat(spaces)}${totalStr}`);
         }
 
         await writeLine("--------------------------------");

@@ -50,7 +50,7 @@ interface OrderDetail {
   createdAt: string;
   customer: { id: string; name: string; phone: string; email?: string };
   items: { id: string; name: string; quantity: number; unitPrice: number; total: number }[];
-  payments: { id: string; amount: number; method: string; createdAt: string; note?: string }[];
+  payments: { id: string; amount: number; method: string; createdAt: string; note?: string; agentName?: string }[];
   statusHistory: { id: string; fromStatus: string | null; toStatus: string; createdAt: string; note?: string }[];
 }
 
@@ -804,23 +804,32 @@ export default function OrderDetailPage() {
             )}
 
             {order.payments.length === 0 ? (
-              <p className="text-sm text-gray-400">Aucun paiement</p>
+              <p className="text-sm text-gray-400">Aucun paiement enregistré</p>
             ) : (
               <div className="space-y-2">
                 {order.payments.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
-                    <div>
-                      <span className="font-medium">{formatFCFA(p.amount)}</span>
-                      <span className="text-gray-500 ml-2">{METHOD_LABELS[p.method]}</span>
+                  <div key={p.id} className="flex items-center justify-between text-sm bg-gray-50/80 p-3 rounded-xl border border-gray-100 shadow-sm">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-900">{formatFCFA(p.amount)}</span>
+                        <span className="badge bg-white text-gray-700 ring-1 ring-gray-200 text-xs px-2 py-0.5 font-medium">
+                          {METHOD_LABELS[p.method] || p.method}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 flex items-center gap-2">
+                        <span>Agent : <strong className="text-gray-700">{p.agentName || "Agent"}</strong></span>
+                        <span>•</span>
+                        <span>Client : <strong className="text-gray-700">{order.customer.name}</strong></span>
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-400">
+                      <span className="text-xs font-mono text-gray-400">
                         {new Date(p.createdAt).toLocaleString("fr-SN", {
                           day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
                         })}
                       </span>
                       {isAdmin && order.status !== "LIVRE" && (
-                        <button onClick={() => deletePayment(p.id)} className="text-red-400 hover:text-red-600 p-1" title="Supprimer ce paiement" disabled={actionLoading}>
+                        <button onClick={() => deletePayment(p.id)} className="text-red-400 hover:text-red-600 p-1 transition-colors" title="Supprimer ce paiement" disabled={actionLoading}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}

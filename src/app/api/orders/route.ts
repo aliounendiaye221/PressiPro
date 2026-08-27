@@ -8,6 +8,7 @@ import { auditLog } from "@/lib/audit";
 import { PaymentMethod } from "@prisma/client";
 import { parsePagination } from "@/lib/pagination";
 import { warmOrderReceiptPdf } from "@/lib/receipt/pdf";
+import { computeOrderItems, computeFinalTotal } from "@/lib/order-utils";
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,30 +78,13 @@ export async function POST(request: NextRequest) {
     }
 
     const serviceMap = new Map(services.map((s) => [s.id, s]));
-    let itemsTotal = 0;
-    const orderItems = data.items.map((item) => {
-      const svc = serviceMap.get(item.serviceId)!;
-      const isPerKg = svc.pricingType === "PER_KG";
-      const quantity = isPerKg ? 1 : (item.quantity ?? 1);
-      const weight = isPerKg ? (item.weight ?? 1) : null;
-      const total = isPerKg
-        ? Math.round(svc.price * (weight ?? 1))
-        : svc.price * quantity;
-      itemsTotal += total;
-      return {
-        serviceId: svc.id,
-        name: svc.name,
-        quantity,
-        unitPrice: svc.price,
-        weight,
-        pricingType: svc.pricingType,
-        total,
-      };
-    });
+    const { items: orderItems, itemsTotal } = computeOrderItems(data.items, serviceMap);
 
     // Handle discount
-    const discountAmount = data.discountAmount ? Math.min(data.discountAmount, itemsTotal) : 0;
-    const totalAmount = itemsTotal - discountAmount;
+    const { totalAmount, cappedDiscount: discountAmount } = computeFinalTotal(
+      itemsTotal,
+      data.discountAmount ?? 0
+    );
     const discountReason = data.discountReason || null;
 
     // Determine advance payment

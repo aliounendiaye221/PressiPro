@@ -1,4 +1,4 @@
-import { OrderStatus } from "@prisma/client";
+export type OrderStatus = "RECU" | "TRAITEMENT" | "PRET" | "LIVRE";
 
 /**
  * Valid status transitions:
@@ -12,17 +12,17 @@ import { OrderStatus } from "@prisma/client";
  * LIVRE -> PRET
  */
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  RECU: [OrderStatus.TRAITEMENT],
-  TRAITEMENT: [OrderStatus.PRET, OrderStatus.RECU], // RECU = rollback
-  PRET: [OrderStatus.LIVRE, OrderStatus.TRAITEMENT], // TRAITEMENT = rollback
-  LIVRE: [OrderStatus.PRET], // PRET = rollback
+  RECU: ["TRAITEMENT"],
+  TRAITEMENT: ["PRET", "RECU"], // RECU = rollback
+  PRET: ["LIVRE", "TRAITEMENT"], // TRAITEMENT = rollback
+  LIVRE: ["PRET"], // PRET = rollback
 };
 
 const ROLLBACK_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   RECU: [],
-  TRAITEMENT: [OrderStatus.RECU],
-  PRET: [OrderStatus.TRAITEMENT],
-  LIVRE: [OrderStatus.PRET],
+  TRAITEMENT: ["RECU"],
+  PRET: ["TRAITEMENT"],
+  LIVRE: ["PRET"],
 };
 
 export function canTransition(

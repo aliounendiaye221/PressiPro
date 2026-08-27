@@ -33,6 +33,15 @@ interface DashboardData {
   lateOrders: number;
   ordersByStatus: Record<string, number>;
   paymentsByMethod: { method: string; total: number; count: number }[];
+  recentPayments?: {
+    id: string;
+    amount: number;
+    method: string;
+    orderCode: string;
+    customerName: string;
+    agentName?: string;
+    createdAt: string;
+  }[];
   urgentOrders: {
     id: string;
     code: string;
@@ -565,6 +574,58 @@ export default function DashboardPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Journal de Caisse & Traçabilité des Encaissements */}
+      {data.recentPayments && data.recentPayments.length > 0 && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Banknote className="w-5 h-5 text-emerald-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Journal de Caisse & Encaissements Récents</h2>
+            </div>
+            <span className="text-xs text-gray-400 font-mono">Dernières 10 transactions</span>
+          </div>
+
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <table className="w-full text-sm min-w-[500px]">
+              <thead>
+                <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                  <th className="py-2.5 px-3">Date & Heure</th>
+                  <th className="py-2.5 px-3">Commande</th>
+                  <th className="py-2.5 px-3">Client</th>
+                  <th className="py-2.5 px-3">Mode</th>
+                  <th className="py-2.5 px-3">Agent</th>
+                  <th className="py-2.5 px-3 text-right">Montant</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100/70">
+                {data.recentPayments.map((p) => (
+                  <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="py-3 px-3 text-xs text-gray-500 font-mono">
+                      {new Date(p.createdAt).toLocaleString("fr-SN", {
+                        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
+                      })}
+                    </td>
+                    <td className="py-3 px-3 font-mono font-semibold text-primary-600">
+                      {p.orderCode}
+                    </td>
+                    <td className="py-3 px-3 font-medium text-gray-900">{p.customerName}</td>
+                    <td className="py-3 px-3">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                        {METHOD_LABELS[p.method] || p.method}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-xs text-gray-600 font-medium">{p.agentName || "Agent"}</td>
+                    <td className="py-3 px-3 text-right font-bold text-emerald-600">
+                      +{formatFCFA(p.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

@@ -4,6 +4,9 @@ import { requireTenantSession } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/rbac";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 import { auditLog } from "@/lib/audit";
+import { updateOrderSchema } from "@/lib/validators";
+import { computeOrderItems, computeFinalTotal } from "@/lib/order-utils";
+import type { Prisma } from "@prisma/client";
 
 export async function GET(
   _request: NextRequest,
@@ -33,7 +36,21 @@ export async function GET(
       return errorResponse("Commande introuvable", 404);
     }
 
-    return successResponse(order);
+    const users = await prisma.user.findMany({
+      where: { tenantId: session.tenantId },
+      select: { id: true, name: true },
+    });
+    const userMap = new Map(users.map((u) => [u.id, u.name]));
+
+    const enrichedPayments = order.payments.map((p) => ({
+      ...p,
+      agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Système",
+    }));
+
+    return successResponse({
+      ...order,
+      payments: enrichedPayments,
+    });
   } catch (error) {
     return handleApiError(error);
   }
@@ -47,6 +64,7 @@ export async function PUT(
     const session = await requireAdmin();
     const { id } = await params;
     const body = await request.json();
+    const data = updateOrderSchema.parse(body);
 
     const order = await prisma.order.findFirst({
       where: { id, tenantId: session.tenantId, deletedAt: null },
@@ -62,22 +80,22 @@ export async function PUT(
       return errorResponse("Impossible de modifier une commande livrée", 400);
     }
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Prisma.OrderUpdateInput = {};
 
     // Update notes
-    if (body.notes !== undefined) {
-      updateData.notes = body.notes || null;
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes || null;
     }
 
     // Update promisedAt
-    if (body.promisedAt !== undefined) {
-      updateData.promisedAt = body.promisedAt ? new Date(body.promisedAt) : null;
+    if (data.promisedAt !== undefined) {
+      updateData.promisedAt = data.promisedAt ? new Date(data.promisedAt) : null;
     }
 
     // Update items if provided
-    if (Array.isArray(body.items) && body.items.length > 0) {
+    if (data.items && data.items.length > 0) {
       // Verify services belong to tenant
-      const serviceIds = body.items.map((i: { serviceId: string }) => i.serviceId);
+      const serviceIds = data.items.map((i) => i.serviceId);
       const services = await prisma.service.findMany({
         where: { id: { in: serviceIds }, tenantId: session.tenantId, active: true },
       });
@@ -86,39 +104,22 @@ export async function PUT(
       }
 
       const serviceMap = new Map(services.map((s) => [s.id, s]));
-      let newTotal = 0;
-      const newItems = body.items.map((item: { serviceId: string; quantity?: number; weight?: number }) => {
-        const svc = serviceMap.get(item.serviceId)!;
-        const isPerKg = svc.pricingType === "PER_KG";
-        const quantity = isPerKg ? 1 : (item.quantity ?? 1);
-        const weight = isPerKg ? (item.weight ?? 1) : null;
-        const total = isPerKg
-          ? Math.round(svc.price * (weight ?? 1))
-          : svc.price * quantity;
-        newTotal += total;
-        return {
-          serviceId: svc.id,
-          name: svc.name,
-          quantity,
-          unitPrice: svc.price,
-          weight,
-          pricingType: svc.pricingType,
-          total,
-        };
-      });
+      const { items: newItems, itemsTotal: newTotal } = computeOrderItems(data.items, serviceMap);
+
+      // Recalculate discount: use new discount if provided, otherwise keep existing
+      const rawDiscount = data.discountAmount ?? order.discountAmount;
+      const { totalAmount: finalTotalAmount, cappedDiscount: discountAmount } = computeFinalTotal(newTotal, rawDiscount);
 
       // Transaction: delete old items, create new, update totals
       const updated = await prisma.$transaction(async (tx) => {
         await tx.orderItem.deleteMany({ where: { orderId: id } });
-
-        const discountAmount = order.discountAmount ? Math.min(order.discountAmount, newTotal) : 0;
-        const finalTotalAmount = newTotal - discountAmount;
 
         const updatedOrder = await tx.order.update({
           where: { id },
           data: {
             ...updateData,
             discountAmount,
+            discountReason: data.discountReason !== undefined ? (data.discountReason || null) : order.discountReason,
             totalAmount: finalTotalAmount,
             items: { create: newItems },
           },

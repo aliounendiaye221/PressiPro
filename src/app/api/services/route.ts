@@ -10,7 +10,7 @@ export async function GET() {
     const session = await requireTenantSession();
     const services = await prisma.service.findMany({
       where: { tenantId: session.tenantId, active: true },
-      orderBy: { sortOrder: "asc" },
+      orderBy: [{ name: "asc" }],
     });
     return successResponse(services);
   } catch (error) {

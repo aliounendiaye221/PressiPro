@@ -54,32 +54,32 @@ describe("rate limit helper", () => {
     clearRateLimitBuckets();
   });
 
-  it("allows requests within the window limit", () => {
+  it("allows requests within the window limit", async () => {
     const now = 1000;
 
-    const first = checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now);
-    const second = checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now + 1000);
+    const first = await checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now);
+    const second = await checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now + 1000);
 
     expect(first.allowed).toBe(true);
     expect(second.allowed).toBe(true);
   });
 
-  it("blocks requests after the limit and provides retryAfter", () => {
+  it("blocks requests after the limit and provides retryAfter", async () => {
     const now = 1000;
 
-    checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now);
-    checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now + 1000);
-    const blocked = checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now + 2000);
+    await checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now);
+    await checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now + 1000);
+    const blocked = await checkRateLimit("login:ip:1.1.1.1", 2, 60_000, now + 2000);
 
     expect(blocked.allowed).toBe(false);
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
   });
 
-  it("resets after window expiration", () => {
+  it("resets after window expiration", async () => {
     const now = 1000;
 
-    checkRateLimit("login:email:test@test.sn", 1, 10_000, now);
-    const afterWindow = checkRateLimit("login:email:test@test.sn", 1, 10_000, now + 10_001);
+    await checkRateLimit("login:email:test@test.sn", 1, 10_000, now);
+    const afterWindow = await checkRateLimit("login:email:test@test.sn", 1, 10_000, now + 10_001);
 
     expect(afterWindow.allowed).toBe(true);
   });

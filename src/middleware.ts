@@ -35,6 +35,32 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // CSRF protection: verify Origin header on mutating API requests
+  const method = request.method.toUpperCase();
+  if (
+    pathname.startsWith("/api/") &&
+    ["POST", "PUT", "PATCH", "DELETE"].includes(method)
+  ) {
+    const origin = request.headers.get("origin");
+    if (origin) {
+      const requestHost = request.nextUrl.host;
+      try {
+        const originHost = new URL(origin).host;
+        if (originHost !== requestHost) {
+          return NextResponse.json(
+            { error: "Requête cross-origin non autorisée" },
+            { status: 403 }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: "En-tête Origin invalide" },
+          { status: 403 }
+        );
+      }
+    }
+  }
+
   const token = request.cookies.get("pressipro-token")?.value;
   if (!token) {
     if (pathname.startsWith("/api/")) {

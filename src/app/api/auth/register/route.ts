@@ -1,18 +1,60 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { hashPassword, createToken, tokenCookieOptions } from "@/lib/auth";
 import { registerSchema } from "@/lib/validators";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const MAX_REGISTER_PER_IP = 5;
+const REGISTER_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function getClientIp(request: NextRequest): string {
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp?.trim()) return realIp.trim();
+
+  const vercelForwardedFor = request.headers.get("x-vercel-forwarded-for");
+  if (vercelForwardedFor) {
+    const candidates = vercelForwardedFor.split(",").map((ip) => ip.trim()).filter(Boolean);
+    if (candidates.length > 0) return candidates[candidates.length - 1] || "unknown";
+  }
+
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const candidates = forwardedFor.split(",").map((ip) => ip.trim()).filter(Boolean);
+    if (candidates.length > 0) return candidates[candidates.length - 1] || "unknown";
+  }
+
+  return "unknown";
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const clientIp = getClientIp(request);
+
+    // Rate limit: max 5 registrations per IP per hour
+    const ipLimit = await checkRateLimit(
+      `auth:register:ip:${clientIp}`,
+      MAX_REGISTER_PER_IP,
+      REGISTER_WINDOW_MS
+    );
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: "Trop de tentatives d'inscription. Réessayez plus tard." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(ipLimit.retryAfterSeconds) },
+        }
+      );
+    }
+
     const body = await request.json();
     const data = registerSchema.parse(body);
     const normalizedEmail = data.email.trim().toLowerCase();
 
     // Check email uniqueness across all tenants (for login simplicity)
-    const existingUser = await prisma.user.findFirst({
+    const existingUser = await prisma.user.findUnique({
       where: { email: normalizedEmail },
+      select: { id: true },
     });
     if (existingUser) {
       return errorResponse("Cet email est déjà utilisé", 409);

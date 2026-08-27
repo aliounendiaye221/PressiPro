@@ -39,6 +39,7 @@ export function writeOfflineCache<T>(key: string, data: T) {
 
     window.localStorage.setItem(getStorageKey(key), JSON.stringify(payload));
   } catch {
+    // localStorage quota exceeded or unavailable (private browsing) — silent fail
   }
 }
 
@@ -50,6 +51,7 @@ export function removeOfflineCache(key: string) {
   try {
     window.localStorage.removeItem(getStorageKey(key));
   } catch {
+    // localStorage unavailable — silent fail
   }
 }
 

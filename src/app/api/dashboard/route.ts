@@ -14,8 +14,23 @@ export async function GET() {
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1); // Monday
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Revenue calculations
-    const [revenueDay, revenueWeek, revenueMonth] = await Promise.all([
+    // Execute ALL queries in parallel for maximum performance
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    const [
+      revenueDay,
+      revenueWeek,
+      revenueMonth,
+      unpaidOrders,
+      lateOrders,
+      ordersByStatus,
+      paymentsByMethod,
+      recentPayments,
+      urgentOrders,
+      todaysOrders,
+    ] = await Promise.all([
+      // Revenue calculations
       prisma.payment.aggregate({
         where: { tenantId, createdAt: { gte: startOfDay } },
         _sum: { amount: true },
@@ -28,96 +43,101 @@ export async function GET() {
         where: { tenantId, createdAt: { gte: startOfMonth } },
         _sum: { amount: true },
       }),
+
+      // Unpaid totals
+      prisma.order.findMany({
+        where: {
+          tenantId,
+          status: { not: "LIVRE" },
+          deletedAt: null,
+        },
+        select: { totalAmount: true, paidAmount: true },
+      }),
+
+      // Late orders count
+      prisma.order.count({
+        where: {
+          tenantId,
+          promisedAt: { lt: now },
+          status: { notIn: ["LIVRE"] },
+          deletedAt: null,
+        },
+      }),
+
+      // Orders by status
+      prisma.order.groupBy({
+        by: ["status"],
+        where: { tenantId, deletedAt: null },
+        _count: true,
+      }),
+
+      // Today's payments by method
+      prisma.payment.groupBy({
+        by: ["method"],
+        where: { tenantId, createdAt: { gte: startOfDay } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+
+      // Recent payments
+      prisma.payment.findMany({
+        where: { tenantId },
+        include: {
+          order: { select: { code: true, customer: { select: { name: true } } } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+
+      // Urgent Orders (Late)
+      prisma.order.findMany({
+        where: {
+          tenantId,
+          promisedAt: { lt: now },
+          status: { notIn: ["PRET", "LIVRE"] },
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          code: true,
+          promisedAt: true,
+          status: true,
+          customer: { select: { name: true, phone: true } },
+        },
+        take: 5,
+        orderBy: { promisedAt: "asc" },
+      }),
+
+      // Today's Orders (Deliverable today)
+      prisma.order.findMany({
+        where: {
+          tenantId,
+          promisedAt: { gte: startOfDay, lt: endOfDay },
+          status: { not: "LIVRE" },
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          code: true,
+          promisedAt: true,
+          status: true,
+          customer: { select: { name: true, phone: true } },
+        },
+        take: 5,
+        orderBy: { promisedAt: "asc" },
+      }),
     ]);
 
-    // Unpaid totals
-    const unpaidOrders = await prisma.order.findMany({
-      where: {
-        tenantId,
-        status: { not: "LIVRE" },
-        deletedAt: null,
-      },
-      select: { totalAmount: true, paidAmount: true },
-    });
     const totalUnpaid = unpaidOrders.reduce(
       (sum, o) => sum + (o.totalAmount - o.paidAmount),
       0
     );
 
-    // Late orders (promisedAt < now AND not LIVRE)
-    const lateOrders = await prisma.order.count({
-      where: {
-        tenantId,
-        promisedAt: { lt: now },
-        status: { notIn: ["LIVRE"] },
-        deletedAt: null,
-      },
-    });
-
-    // Orders by status
-    const ordersByStatus = await prisma.order.groupBy({
-      by: ["status"],
-      where: { tenantId, deletedAt: null },
-      _count: true,
-    });
-
-    // Today's payments by method
-    const paymentsByMethod = await prisma.payment.groupBy({
-      by: ["method"],
-      where: { tenantId, createdAt: { gte: startOfDay } },
-      _sum: { amount: true },
-      _count: true,
-    });
-
-    // Recent payments
-    const recentPayments = await prisma.payment.findMany({
+    const users = await prisma.user.findMany({
       where: { tenantId },
-      include: {
-        order: { select: { code: true, customer: { select: { name: true } } } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
+      select: { id: true, name: true },
     });
-
-    // Urgent Orders (Late)
-    const urgentOrders = await prisma.order.findMany({
-      where: {
-        tenantId,
-        promisedAt: { lt: now },
-        status: { notIn: ["PRET", "LIVRE"] },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        code: true,
-        promisedAt: true,
-        status: true,
-        customer: { select: { name: true, phone: true } },
-      },
-      take: 5,
-      orderBy: { promisedAt: "asc" },
-    });
-
-    // Today's Orders (Deliverable today)
-    const endOfDay = new Date(startOfDay);
-    endOfDay.setDate(endOfDay.getDate() + 1);
-    const todaysOrders = await prisma.order.findMany({
-      where: {
-        tenantId,
-        promisedAt: { gte: startOfDay, lt: endOfDay },
-        status: { not: "LIVRE" },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        code: true,
-        promisedAt: true,
-        status: true,
-        customer: { select: { name: true, phone: true } },
-      },
-      take: 5,
-      orderBy: { promisedAt: "asc" },
-    });
+    const userMap = new Map(users.map((u) => [u.id, u.name]));
 
     return successResponse({
       revenue: {
@@ -141,6 +161,7 @@ export async function GET() {
         method: p.method,
         orderCode: p.order.code,
         customerName: p.order.customer.name,
+        agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Système",
         createdAt: p.createdAt,
       })),
       urgentOrders,

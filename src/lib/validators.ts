@@ -68,6 +68,14 @@ export const updateOrderStatusSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
+export const updateOrderSchema = z.object({
+  notes: z.string().max(500).optional().or(z.literal("")),
+  promisedAt: z.string().optional().nullable(),
+  items: z.array(orderItemSchema).min(1, "Au moins un article requis").optional(),
+  discountAmount: z.number().int().min(0).optional(),
+  discountReason: z.string().max(200).optional().or(z.literal("")),
+});
+
 // ─── Payment ─────────────────────────────────────────────────
 export const createPaymentSchema = z.object({
   amount: z.number().int().min(1, "Montant minimum 1 FCFA"),

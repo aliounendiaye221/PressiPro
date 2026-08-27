@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     const normalizedEmail = data.email.trim().toLowerCase();
     const clientIp = getClientIp(request);
 
-    const ipLimit = checkRateLimit(
+    const ipLimit = await checkRateLimit(
       `auth:login:ip:${clientIp}`,
       MAX_LOGIN_ATTEMPTS_PER_IP,
       LOGIN_WINDOW_MS
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       return tooManyRequestsResponse(ipLimit.retryAfterSeconds);
     }
 
-    const emailLimit = checkRateLimit(
+    const emailLimit = await checkRateLimit(
       `auth:login:email:${normalizedEmail}`,
       MAX_LOGIN_ATTEMPTS_PER_EMAIL,
       LOGIN_WINDOW_MS
@@ -81,12 +81,12 @@ export async function POST(request: NextRequest) {
       return tooManyRequestsResponse(emailLimit.retryAfterSeconds);
     }
 
-    const user = await prisma.user.findFirst({
-      where: { email: normalizedEmail, active: true },
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
       include: { tenant: { select: { id: true, name: true, active: true } } },
     });
 
-    if (!user) {
+    if (!user || !user.active) {
       return errorResponse("Email ou mot de passe incorrect", 401);
     }
 

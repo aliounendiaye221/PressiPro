@@ -94,7 +94,18 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    return successResponse(payments);
+    const users = await prisma.user.findMany({
+      where: { tenantId: session.tenantId },
+      select: { id: true, name: true },
+    });
+    const userMap = new Map(users.map((u) => [u.id, u.name]));
+
+    const enriched = payments.map((p) => ({
+      ...p,
+      agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Système",
+    }));
+
+    return successResponse(enriched);
   } catch (error) {
     return handleApiError(error);
   }

@@ -71,14 +71,16 @@ export default function NewOrderPage() {
         if (!r.ok) throw new Error("services-fetch-failed");
         return r.json();
       })
-      .then((data) => {
-        setServices(data);
-        writeOfflineCache(SERVICES_CACHE_KEY, data);
+      .then((data: Service[]) => {
+        const sorted = [...(data || [])].sort((a, b) => a.name.localeCompare(b.name, "fr"));
+        setServices(sorted);
+        writeOfflineCache(SERVICES_CACHE_KEY, sorted);
       })
       .catch(() => {
         const cached = readOfflineCache<Service[]>(SERVICES_CACHE_KEY);
         if (cached) {
-          setServices(cached.data);
+          const sorted = [...(cached.data || [])].sort((a, b) => a.name.localeCompare(b.name, "fr"));
+          setServices(sorted);
         }
       });
 

@@ -79,14 +79,14 @@ export async function GET() {
         _count: true,
       }),
 
-      // Recent payments
+      // Recent payments (élargi à 100 pour une vue complète du journal de caisse)
       prisma.payment.findMany({
         where: { tenantId },
         include: {
-          order: { select: { code: true, customer: { select: { name: true } } } },
+          order: { select: { id: true, code: true, customer: { select: { name: true } } } },
         },
         orderBy: { createdAt: "desc" },
-        take: 10,
+        take: 100,
       }),
 
       // Urgent Orders (Late)
@@ -157,6 +157,7 @@ export async function GET() {
       })),
       recentPayments: recentPayments.map((p) => ({
         id: p.id,
+        orderId: p.order.id,
         amount: p.amount,
         method: p.method,
         orderCode: p.order.code,

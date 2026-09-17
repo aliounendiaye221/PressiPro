@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "prisma generate && prisma db push --skip-generate && next build",
+    "build": "node scripts/prisma-generate-safe.mjs && node scripts/vercel-one-shot-migrate.mjs && node --max-old-space-size=4096 node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "eslint .",
     "postinstall": "prisma generate",

@@ -100,39 +100,3 @@ export const createUserSchema = z.object({
   name: z.string().min(2).max(100),
   role: z.enum(["ADMIN", "AGENT"]),
 });
-
-// ─── Cash Register & Sessions ────────────────────────────────
-export const createCashRegisterSchema = z.object({
-  name: z.string().min(2, "Nom requis (au moins 2 caractères)").max(50),
-  code: z.string().min(2, "Code requis (au moins 2 caractères)").max(10).toUpperCase(),
-  isDefault: z.boolean().optional(),
-});
-
-export const updateCashRegisterSchema = z.object({
-  name: z.string().min(2).max(50).optional(),
-  code: z.string().min(2).max(10).toUpperCase().optional(),
-  active: z.boolean().optional(),
-  isDefault: z.boolean().optional(),
-});
-
-export const openSessionSchema = z.object({
-  registerId: z.string().min(1, "Caisse requise"),
-  openingAmount: z.number().int().min(0, "Le fond de caisse ne peut être négatif"),
-  openingNote: z.string().max(500).optional().or(z.literal("")),
-});
-
-export const closeSessionSchema = z.object({
-  actualCash: z.number().int().min(0, "Le montant compté ne peut être négatif"),
-  closingNote: z.string().max(1000).optional().or(z.literal("")),
-});
-
-export const cashMovementSchema = z.object({
-  sessionId: z.string().min(1).optional(),
-  type: z.enum(["CASH_IN", "CASH_OUT"]),
-  amount: z.number().int().min(1, "Montant minimum 1 FCFA"),
-  category: z.string().min(1, "Catégorie requise").max(50),
-  reason: z.string().min(2, "Motif obligatoire").max(255),
-  beneficiary: z.string().max(100).optional().or(z.literal("")),
-  receiptRef: z.string().max(50).optional().or(z.literal("")),
-});
-

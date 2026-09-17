@@ -224,19 +224,6 @@ async function main() {
     },
   });
 
-  // ── Cash Register ────────────────────────────────────────
-  await (prisma as any).cashRegister.upsert({
-    where: { tenantId_code: { tenantId: tenant.id, code: "CS-01" } },
-    update: {},
-    create: {
-      tenantId: tenant.id,
-      name: "Caisse Principale",
-      code: "CS-01",
-      isDefault: true,
-      active: true,
-    },
-  });
-
   console.log("✅ Seed complete!");
   console.log("  Tenant:", tenant.name);
   console.log("  Admin:  admin@pressipro.sn /", adminPassword);

@@ -188,10 +188,10 @@ export default function OrdersPage() {
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
-        <div className="relative">
-          <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <div className="relative w-full sm:w-auto">
+          <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <select
-            className="input-field pl-10 pr-8 w-auto appearance-none cursor-pointer"
+            className="input-field pl-10 pr-8 w-full sm:w-auto appearance-none cursor-pointer"
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
           >

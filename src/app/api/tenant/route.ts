@@ -13,6 +13,7 @@ const updateTenantSchema = z.object({
   logoUrl: z.string().url().max(500).optional().or(z.literal("")),
   brandPrimaryColor: z.string().regex(/^#(?:[0-9a-fA-F]{6})$/).optional().or(z.literal("")),
   brandAccentColor: z.string().regex(/^#(?:[0-9a-fA-F]{6})$/).optional().or(z.literal("")),
+  requireOpenSessionForPayment: z.boolean().optional(),
 });
 
 export async function GET() {
@@ -30,6 +31,7 @@ export async function GET() {
         logoUrl: true,
         brandPrimaryColor: true,
         brandAccentColor: true,
+        requireOpenSessionForPayment: true,
       },
     });
     return successResponse(tenant);
@@ -55,6 +57,9 @@ export async function PUT(request: NextRequest) {
         logoUrl: data.logoUrl || null,
         brandPrimaryColor: data.brandPrimaryColor || null,
         brandAccentColor: data.brandAccentColor || null,
+        ...(data.requireOpenSessionForPayment !== undefined && {
+          requireOpenSessionForPayment: data.requireOpenSessionForPayment,
+        }),
       },
       select: {
         id: true,
@@ -66,6 +71,7 @@ export async function PUT(request: NextRequest) {
         logoUrl: true,
         brandPrimaryColor: true,
         brandAccentColor: true,
+        requireOpenSessionForPayment: true,
       },
     });
 

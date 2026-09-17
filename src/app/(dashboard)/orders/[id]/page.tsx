@@ -670,6 +670,18 @@ export default function OrderDetailPage() {
         </div>
       )}
 
+      {editError && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 flex items-center justify-between">
+          <span>{editError}</span>
+          <button
+            onClick={() => setEditError("")}
+            className="text-rose-500 hover:text-rose-700 font-bold ml-3 text-base"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {showWhatsAppGuide && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <p className="font-semibold">Etape suivante dans WhatsApp</p>
@@ -771,6 +783,12 @@ export default function OrderDetailPage() {
             {showPayment && (
               <div className="bg-gray-50 p-3 rounded-lg mb-3 space-y-2">
                 <p className="text-sm font-medium">Reste: {formatFCFA(amountDue)}</p>
+                {editError && (
+                  <div className="p-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center justify-between">
+                    <span>{editError}</span>
+                    <button onClick={() => setEditError("")} className="font-bold ml-2 text-sm text-red-500 hover:text-red-700">×</button>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="number"

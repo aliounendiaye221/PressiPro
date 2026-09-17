@@ -91,6 +91,37 @@ export async function POST(request: NextRequest) {
     const advanceAmount = data.advanceAmount && data.advanceAmount > 0
       ? Math.min(data.advanceAmount, totalAmount)
       : 0;
+    const advanceMethod = (data.advanceMethod as PaymentMethod) || "CASH";
+
+    // Check active cash session if advance payment is provided
+    let activeCashSessionId: string | null = null;
+    if (advanceAmount > 0) {
+      const [activeSession, tenant] = await Promise.all([
+        (prisma as any).cashSession.findFirst({
+          where: { tenantId: session.tenantId, status: "OPEN" },
+          orderBy: { openedAt: "desc" },
+        }),
+        prisma.tenant.findUnique({
+          where: { id: session.tenantId },
+          select: { requireOpenSessionForPayment: true },
+        }),
+      ]);
+
+      if (
+        advanceMethod === "CASH" &&
+        tenant?.requireOpenSessionForPayment &&
+        !activeSession
+      ) {
+        return errorResponse(
+          "Impossible d'enregistrer une avance en espèces : aucune session de caisse n'est ouverte. Ouvrez une session de caisse.",
+          400
+        );
+      }
+
+      if (activeSession) {
+        activeCashSessionId = activeSession.id;
+      }
+    }
 
     let order;
     let retries = 3;
@@ -131,8 +162,9 @@ export async function POST(request: NextRequest) {
                 tenantId: session.tenantId,
                 orderId: newOrder.id,
                 amount: advanceAmount,
-                method: (data.advanceMethod as PaymentMethod) || "CASH",
+                method: advanceMethod,
                 createdBy: session.userId,
+                sessionId: activeCashSessionId,
               },
             });
           }

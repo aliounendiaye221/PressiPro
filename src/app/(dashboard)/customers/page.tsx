@@ -210,15 +210,15 @@ export default function CustomersPage() {
         <>
           <div className="grid gap-2">
             {customers.map((c) => (
-              <Link key={c.id} href={`/customers/${c.id}`} className="group card hover:shadow-lg hover:border-primary-100 transition-all duration-200 flex items-center gap-4">
-                <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-xl flex items-center justify-center text-white font-bold shadow-sm">
+              <Link key={c.id} href={`/customers/${c.id}`} className="group card hover:shadow-lg hover:border-primary-100 transition-all duration-200 flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-xl flex items-center justify-center text-white font-bold shadow-sm shrink-0">
                   {c.name.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium">{c.name}</p>
-                  <p className="text-sm text-gray-500">{c.phone}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate text-gray-900">{c.name}</p>
+                  <p className="text-sm text-gray-500 truncate">{c.phone}</p>
                 </div>
-                <span className="text-gray-400 text-xs">
+                <span className="text-gray-400 text-xs shrink-0">
                   {new Date(c.createdAt).toLocaleDateString("fr-SN")}
                 </span>
               </Link>

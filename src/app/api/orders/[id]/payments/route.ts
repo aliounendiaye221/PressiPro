@@ -32,6 +32,29 @@ export async function POST(
       );
     }
 
+    // Check active cash session
+    const [activeCashSession, tenant] = await Promise.all([
+      (prisma as any).cashSession.findFirst({
+        where: { tenantId: session.tenantId, status: "OPEN" },
+        orderBy: { openedAt: "desc" },
+      }),
+      prisma.tenant.findUnique({
+        where: { id: session.tenantId },
+        select: { requireOpenSessionForPayment: true },
+      }),
+    ]);
+
+    if (
+      data.method === "CASH" &&
+      tenant?.requireOpenSessionForPayment &&
+      !activeCashSession
+    ) {
+      return errorResponse(
+        "Impossible d'encaisser en espèces : aucune vacation de caisse n'est ouverte. Veuillez ouvrir une session de caisse.",
+        400
+      );
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
         data: {
@@ -41,6 +64,7 @@ export async function POST(
           method: data.method,
           note: data.note || null,
           createdBy: session.userId,
+          sessionId: activeCashSession ? activeCashSession.id : null,
         },
       });
 

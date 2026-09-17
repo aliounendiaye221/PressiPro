@@ -11,7 +11,7 @@ function runPrisma(args, allowFailure = false) {
   }
 }
 
-if (process.env.VERCEL_ONE_SHOT_MIGRATE !== "1") {
+if (process.env.VERCEL !== "1" && process.env.VERCEL_ONE_SHOT_MIGRATE !== "1") {
   process.exit(0);
 }
 

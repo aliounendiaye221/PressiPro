@@ -30,6 +30,10 @@ model Tenant {
   services  Service[]
   payments  Payment[]
   auditLogs AuditLog[]
+  requireOpenSessionForPayment Boolean @default(false)
+  cashRegisters CashRegister[]
+  cashSessions  CashSession[]
+  cashMovements CashMovement[]
 }
 
 // ─── USER ──────────────────────────────────────────────────
@@ -54,6 +58,9 @@ model User {
   updatedAt DateTime @updatedAt
 
   auditLogs AuditLog[]
+  openedSessions CashSession[] @relation("SessionOpenedBy")
+  closedSessions CashSession[] @relation("SessionClosedBy")
+  cashMovements  CashMovement[]
 
   @@unique([email])
   @@unique([tenantId, email])
@@ -196,9 +203,12 @@ model Payment {
   note      String?
   createdBy String?       // userId
   createdAt DateTime      @default(now())
+  sessionId String?
+  session   CashSession?  @relation(fields: [sessionId], references: [id])
 
   @@index([tenantId])
   @@index([orderId])
+  @@index([sessionId])
   @@index([tenantId, createdAt])
 }
 
@@ -219,3 +229,93 @@ model AuditLog {
   @@index([tenantId, createdAt])
   @@index([entityId])
 }
+
+// ─── CASH REGISTERS & SESSIONS ─────────────────────────────
+model CashRegister {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String   // e.g. "Caisse Principale"
+  code      String   // e.g. "CS-01"
+  isDefault Boolean  @default(false)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions  CashSession[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+model CashSession {
+  id            String            @id @default(cuid())
+  tenantId      String
+  tenant        Tenant            @relation(fields: [tenantId], references: [id])
+  registerId    String
+  register      CashRegister      @relation(fields: [registerId], references: [id])
+  sessionNumber Int
+
+  openedById    String
+  openedBy      User              @relation("SessionOpenedBy", fields: [openedById], references: [id])
+  openedAt      DateTime          @default(now())
+  openingAmount Int               @default(0) // Fond initial en FCFA
+  openingNote   String?
+
+  closedById    String?
+  closedBy      User?             @relation("SessionClosedBy", fields: [closedById], references: [id])
+  closedAt      DateTime?
+  status        CashSessionStatus @default(OPEN)
+
+  expectedCash  Int?              // Fond + paiements espèces + entrées manuelles - sorties manuelles
+  actualCash    Int?              // Montant physique compté
+  difference    Int?              // actualCash - expectedCash
+  expectedWave  Int?              // Total Wave
+  expectedOm    Int?              // Total Orange Money
+  expectedOther Int?              // Total Autres
+  closingNote   String?
+  zReportNumber String?           // e.g. "Z-2026-0001"
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  payments      Payment[]
+  movements     CashMovement[]
+
+  @@unique([tenantId, registerId, sessionNumber])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([registerId])
+}
+
+enum CashMovementType {
+  CASH_IN
+  CASH_OUT
+}
+
+model CashMovement {
+  id          String           @id @default(cuid())
+  tenantId    String
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  sessionId   String
+  session     CashSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type        CashMovementType
+  amount      Int              // montant en FCFA (> 0)
+  category    String           // "FOURNITURES", "LESSIVE", "ENERGIE", "TRANSPORT", "SALAIRE", "APPORT", "AUTRE"
+  reason      String           // motif obligatoire
+  beneficiary String?
+  receiptRef  String?
+  createdById String
+  createdBy   User             @relation(fields: [createdById], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@index([tenantId])
+  @@index([sessionId])
+  @@index([tenantId, createdAt])
+}
+

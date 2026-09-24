@@ -4,28 +4,10 @@ import { hashPassword, createToken, tokenCookieOptions } from "@/lib/auth";
 import { registerSchema } from "@/lib/validators";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 const MAX_REGISTER_PER_IP = 5;
 const REGISTER_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-
-function getClientIp(request: NextRequest): string {
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp?.trim()) return realIp.trim();
-
-  const vercelForwardedFor = request.headers.get("x-vercel-forwarded-for");
-  if (vercelForwardedFor) {
-    const candidates = vercelForwardedFor.split(",").map((ip) => ip.trim()).filter(Boolean);
-    if (candidates.length > 0) return candidates[candidates.length - 1] || "unknown";
-  }
-
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const candidates = forwardedFor.split(",").map((ip) => ip.trim()).filter(Boolean);
-    if (candidates.length > 0) return candidates[candidates.length - 1] || "unknown";
-  }
-
-  return "unknown";
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,7 +44,8 @@ export async function POST(request: NextRequest) {
 
     // Create tenant + admin user in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      const tenant = await tx.tenant.create({
+      const p = tx as typeof prisma;
+      const tenant = await p.tenant.create({
         data: {
           name: data.tenantName,
           phone: data.tenantPhone || null,
@@ -71,7 +54,7 @@ export async function POST(request: NextRequest) {
       });
 
       const hashedPw = await hashPassword(data.password);
-      const user = await tx.user.create({
+      const user = await p.user.create({
         data: {
           tenantId: tenant.id,
           email: normalizedEmail,

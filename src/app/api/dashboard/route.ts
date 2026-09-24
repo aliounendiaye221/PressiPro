@@ -129,7 +129,7 @@ export async function GET() {
     ]);
 
     const totalUnpaid = unpaidOrders.reduce(
-      (sum, o) => sum + (o.totalAmount - o.paidAmount),
+      (sum: number, o: { totalAmount: number; paidAmount: number }) => sum + (o.totalAmount - o.paidAmount),
       0
     );
 
@@ -137,7 +137,7 @@ export async function GET() {
       where: { tenantId },
       select: { id: true, name: true },
     });
-    const userMap = new Map(users.map((u) => [u.id, u.name]));
+    const userMap = new Map<string, string>(users.map((u: any) => [u.id, u.name]));
 
     return successResponse({
       revenue: {
@@ -148,14 +148,14 @@ export async function GET() {
       totalUnpaid,
       lateOrders,
       ordersByStatus: Object.fromEntries(
-        ordersByStatus.map((s) => [s.status, s._count])
+        ordersByStatus.map((s: { status: string; _count: number }) => [s.status, s._count])
       ),
-      paymentsByMethod: paymentsByMethod.map((p) => ({
+      paymentsByMethod: paymentsByMethod.map((p: { method: string; _sum: { amount: number | null }; _count: number }) => ({
         method: p.method,
         total: p._sum.amount || 0,
         count: p._count,
       })),
-      recentPayments: recentPayments.map((p) => ({
+      recentPayments: recentPayments.map((p: any) => ({
         id: p.id,
         orderId: p.order.id,
         amount: p.amount,
@@ -163,6 +163,7 @@ export async function GET() {
         orderCode: p.order.code,
         customerName: p.order.customer.name,
         agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Système",
+
         createdAt: p.createdAt,
       })),
       urgentOrders,

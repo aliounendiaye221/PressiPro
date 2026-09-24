@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     return successResponse({
-      orders: orders.map((o) => ({
+      orders: orders.map((o: any) => ({
         id: o.id,
         code: o.code,
         status: o.status,

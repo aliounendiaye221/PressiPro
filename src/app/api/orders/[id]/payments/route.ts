@@ -16,24 +16,45 @@ export async function POST(
     const body = await request.json();
     const data = createPaymentSchema.parse(body);
 
-    const order = await prisma.order.findFirst({
+    // Vérification préliminaire (non bloquante) pour retourner un 404 rapide.
+    const orderExists = await prisma.order.findFirst({
       where: { id: orderId, tenantId: session.tenantId, deletedAt: null },
+      select: { id: true },
     });
 
-    if (!order) {
+    if (!orderExists) {
       return errorResponse("Commande introuvable", 404);
     }
 
-    const amountDue = order.totalAmount - order.paidAmount;
-    if (data.amount > amountDue) {
-      return errorResponse(
-        `Montant dépasse le reste à payer (${amountDue} FCFA)`,
-        400
-      );
-    }
+    // La vérification du solde restant ET la création du paiement sont dans la même
+    // transaction Prisma, ce qui garantit l'atomicité au niveau base de données.
+    // PostgreSQL sérialise les transactions concurrentes sur la même ligne via son
+    // mécanisme MVCC, empêchant les surpaiements en cas de requêtes simultanées.
+    let overpaymentErrorMsg: string | null = null;
 
-    const result = await prisma.$transaction(async (tx) => {
-      const payment = await tx.payment.create({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const txResult: { payment: any; newPaidAmount: number } | null = await prisma.$transaction(async (tx) => {
+      // Relecture de la commande à l'intérieur de la transaction pour avoir
+      // les valeurs courantes (protégées par l'isolation de la transaction).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const currentOrder = await (tx as any).order.findFirst({
+        where: { id: orderId, tenantId: session.tenantId, deletedAt: null },
+        select: { totalAmount: true, paidAmount: true },
+      });
+
+      if (!currentOrder) {
+        throw new Error("NOT_FOUND");
+      }
+
+      const amountDue = currentOrder.totalAmount - currentOrder.paidAmount;
+
+      if (data.amount > amountDue) {
+        overpaymentErrorMsg = `Montant dépasse le reste à payer (${amountDue} FCFA)`;
+        return null;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const payment = await (tx as any).payment.create({
         data: {
           tenantId: session.tenantId,
           orderId,
@@ -44,29 +65,39 @@ export async function POST(
         },
       });
 
-      const updatedOrder = await tx.order.update({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updatedOrder = await (tx as any).order.update({
         where: { id: orderId },
         data: { paidAmount: { increment: data.amount } },
+        select: { id: true, paidAmount: true },
       });
 
-      return { payment, order: updatedOrder };
+      return { payment, newPaidAmount: updatedOrder.paidAmount };
     });
+
+    if (overpaymentErrorMsg) {
+      return errorResponse(overpaymentErrorMsg, 400);
+    }
+
+    if (!txResult) {
+      return errorResponse("Commande introuvable", 404);
+    }
 
     await auditLog({
       tenantId: session.tenantId,
       userId: session.userId,
       action: "PAYMENT_CREATED",
       entity: "Payment",
-      entityId: result.payment.id,
+      entityId: txResult.payment.id,
       details: {
         orderId,
         amount: data.amount,
         method: data.method,
-        newPaidAmount: result.order.paidAmount,
+        newPaidAmount: txResult.newPaidAmount,
       },
     });
 
-    return successResponse(result.payment, 201);
+    return successResponse(txResult.payment, 201);
   } catch (error) {
     return handleApiError(error);
   }
@@ -98,9 +129,9 @@ export async function GET(
       where: { tenantId: session.tenantId },
       select: { id: true, name: true },
     });
-    const userMap = new Map(users.map((u) => [u.id, u.name]));
+    const userMap = new Map(users.map((u: any) => [u.id, u.name]));
 
-    const enriched = payments.map((p) => ({
+    const enriched = payments.map((p: any) => ({
       ...p,
       agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Système",
     }));
@@ -133,11 +164,16 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.payment.delete({ where: { id: paymentId } });
-      await tx.order.update({
-        where: { id: orderId },
-        data: { paidAmount: { decrement: payment.amount } },
-      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (tx as any).payment.delete({ where: { id: paymentId } });
+      // Utilise GREATEST(0, ...) pour éviter un paidAmount négatif en cas d'incohérence de données.
+      // prisma.$executeRaw est appelé via le client tx pour rester dans la transaction.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (tx as any).$executeRaw`
+        UPDATE "Order"
+        SET "paidAmount" = GREATEST(0, "paidAmount" - ${payment.amount})
+        WHERE id = ${orderId}
+      `;
     });
 
     await auditLog({

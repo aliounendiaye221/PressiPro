@@ -77,8 +77,9 @@ export async function POST(request: NextRequest) {
       return errorResponse("Un ou plusieurs services sont invalides", 400);
     }
 
-    const serviceMap = new Map(services.map((s) => [s.id, s]));
+    const serviceMap = new Map<string, typeof services[0]>(services.map((s: any) => [s.id, s]));
     const { items: orderItems, itemsTotal } = computeOrderItems(data.items, serviceMap);
+
 
     // Handle discount
     const { totalAmount, cappedDiscount: discountAmount } = computeFinalTotal(
@@ -96,9 +97,14 @@ export async function POST(request: NextRequest) {
     let retries = 3;
     while (retries > 0) {
       try {
+        // generateOrderCode utilise prisma.$queryRaw (sur le client principal, pas tx)
+        // avec FOR UPDATE pour verrouiller les lignes existantes du tenant.
+        // La génération + création sont liées par la contrainte unique + le retry.
         const code = await generateOrderCode(session.tenantId);
+
         order = await prisma.$transaction(async (tx) => {
-          const newOrder = await tx.order.create({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const newOrder = await (tx as any).order.create({
             data: {
               tenantId: session.tenantId,
               code,
@@ -126,7 +132,8 @@ export async function POST(request: NextRequest) {
 
           // Create advance payment if any
           if (advanceAmount > 0) {
-            await tx.payment.create({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (tx as any).payment.create({
               data: {
                 tenantId: session.tenantId,
                 orderId: newOrder.id,

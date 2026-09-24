@@ -39,6 +39,21 @@ export async function verifyToken(
 ): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
+
+    // Validation structurelle du payload pour éviter qu'un token malformé
+    // ou issu d'une ancienne clé ne soit accepté silencieusement.
+    if (
+      typeof payload.userId !== "string" ||
+      typeof payload.tenantId !== "string" ||
+      typeof payload.role !== "string" ||
+      typeof payload.email !== "string" ||
+      typeof payload.name !== "string" ||
+      !payload.userId ||
+      !payload.tenantId
+    ) {
+      return null;
+    }
+
     return payload as unknown as SessionPayload;
   } catch {
     return null;

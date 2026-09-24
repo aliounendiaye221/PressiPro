@@ -40,12 +40,13 @@ export async function GET(
       where: { tenantId: session.tenantId },
       select: { id: true, name: true },
     });
-    const userMap = new Map(users.map((u) => [u.id, u.name]));
+    const userMap = new Map<string, string>(users.map((u: any) => [u.id, u.name]));
 
-    const enrichedPayments = order.payments.map((p) => ({
+    const enrichedPayments = order.payments.map((p: any) => ({
       ...p,
       agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Système",
     }));
+
 
     return successResponse({
       ...order,
@@ -103,7 +104,7 @@ export async function PUT(
         return errorResponse("Un ou plusieurs services sont invalides", 400);
       }
 
-      const serviceMap = new Map(services.map((s) => [s.id, s]));
+      const serviceMap = new Map<string, typeof services[0]>(services.map((s: any) => [s.id, s]));
       const { items: newItems, itemsTotal: newTotal } = computeOrderItems(data.items, serviceMap);
 
       // Recalculate discount: use new discount if provided, otherwise keep existing
@@ -112,9 +113,10 @@ export async function PUT(
 
       // Transaction: delete old items, create new, update totals
       const updated = await prisma.$transaction(async (tx) => {
-        await tx.orderItem.deleteMany({ where: { orderId: id } });
+        const p = tx as typeof prisma;
+        await p.orderItem.deleteMany({ where: { orderId: id } });
 
-        const updatedOrder = await tx.order.update({
+        const updatedOrder = await p.order.update({
           where: { id },
           data: {
             ...updateData,
@@ -229,7 +231,7 @@ export async function DELETE(
           promisedAt: order.promisedAt?.toISOString() || null,
           createdAt: order.createdAt.toISOString(),
           updatedAt: order.updatedAt.toISOString(),
-          items: order.items.map((i) => ({
+          items: order.items.map((i: any) => ({
             id: i.id,
             serviceId: i.serviceId,
             name: i.name,
@@ -239,7 +241,7 @@ export async function DELETE(
             pricingType: i.pricingType,
             total: i.total,
           })),
-          payments: order.payments.map((p) => ({
+          payments: order.payments.map((p: any) => ({
             id: p.id,
             amount: p.amount,
             method: p.method,

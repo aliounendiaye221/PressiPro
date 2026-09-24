@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     return successResponse({
-      customers: customers.map((c) => ({
+      customers: customers.map((c: any) => ({
         id: c.id,
         name: c.name,
         phone: c.phone,

@@ -101,10 +101,10 @@ export async function GET() {
     ]);
 
     const revenueByTenantMonth = Object.fromEntries(
-      tenantRevenuesMonth.map((r) => [r.tenantId, r._sum.amount || 0])
+      tenantRevenuesMonth.map((r: { tenantId: string; _sum: { amount: number | null } }) => [r.tenantId, r._sum.amount || 0])
     );
     const revenueByTenantAll = Object.fromEntries(
-      tenantRevenuesAll.map((r) => [r.tenantId, r._sum.amount || 0])
+      tenantRevenuesAll.map((r: { tenantId: string; _sum: { amount: number | null } }) => [r.tenantId, r._sum.amount || 0])
     );
 
     // Daily revenue for the last 30 days
@@ -140,7 +140,7 @@ export async function GET() {
       : 0;
 
     const orderStatusMap = Object.fromEntries(
-      ordersByStatus.map((s) => [s.status, s._count])
+      ordersByStatus.map((s: { status: string; _count: number }) => [s.status, s._count])
     );
 
     return successResponse({
@@ -164,7 +164,7 @@ export async function GET() {
         LIVRE: orderStatusMap["LIVRE"] || 0,
       },
       dailyRevenue,
-      tenants: tenants.map((t) => ({
+      tenants: tenants.map((t: any) => ({
         id: t.id,
         name: t.name,
         phone: t.phone,
@@ -177,7 +177,7 @@ export async function GET() {
         revenue: revenueByTenantMonth[t.id] || 0,
         totalRevenue: revenueByTenantAll[t.id] || 0,
       })),
-      recentPayments: recentPayments.map((p) => ({
+      recentPayments: recentPayments.map((p: any) => ({
         id: p.id,
         amount: p.amount,
         method: p.method,
@@ -186,7 +186,7 @@ export async function GET() {
         tenantName: p.tenant.name,
         createdAt: p.createdAt,
       })),
-      paymentsByMethod: paymentsByMethod.map((p) => ({
+      paymentsByMethod: paymentsByMethod.map((p: { method: string; _sum: { amount: number | null }; _count: number }) => ({
         method: p.method,
         total: p._sum.amount || 0,
         count: p._count,

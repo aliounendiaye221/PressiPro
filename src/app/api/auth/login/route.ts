@@ -5,44 +5,13 @@ import { verifyPassword, createToken, tokenCookieOptions } from "@/lib/auth";
 import { loginSchema } from "@/lib/validators";
 import { handleApiError, errorResponse, successResponse } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 const MAX_LOGIN_ATTEMPTS_PER_IP = 30;
 const MAX_LOGIN_ATTEMPTS_PER_EMAIL = 12;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const MAX_FAILED_PASSWORD_ATTEMPTS = 5;
 const ACCOUNT_LOCK_MS = 15 * 60 * 1000;
-
-function getClientIp(request: NextRequest): string {
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp?.trim()) {
-    return realIp.trim();
-  }
-
-  const vercelForwardedFor = request.headers.get("x-vercel-forwarded-for");
-  if (vercelForwardedFor) {
-    const candidates = vercelForwardedFor
-      .split(",")
-      .map((ip) => ip.trim())
-      .filter(Boolean);
-    if (candidates.length > 0) {
-      return candidates[candidates.length - 1] || "unknown";
-    }
-  }
-
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const candidates = forwardedFor
-      .split(",")
-      .map((ip) => ip.trim())
-      .filter(Boolean);
-    if (candidates.length > 0) {
-      // Use the right-most hop as a safer fallback when multiple proxies are involved.
-      return candidates[candidates.length - 1] || "unknown";
-    }
-  }
-
-  return "unknown";
-}
 
 function tooManyRequestsResponse(retryAfterSeconds: number) {
   return NextResponse.json(

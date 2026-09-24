@@ -118,7 +118,7 @@ async function buildReceiptData(order: OrderForReceipt, isDuplicate: boolean): P
     promisedDate: order.promisedAt ? formatDate(order.promisedAt.toISOString()) : null,
     customerName: order.customer.name,
     customerPhone: order.customer.phone,
-    items: order.items.map((item) => ({
+    items: order.items.map((item: any) => ({
       name: item.name,
       quantity: item.quantity,
       unitPrice: item.unitPrice,

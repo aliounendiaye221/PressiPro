@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/rbac";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 import { NextRequest } from "next/server";
+import { z } from "zod";
+
 
 // GET — détails d'un tenant
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -32,32 +34,44 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const body = await req.json();
 
+    const updateAdminTenantSchema = z.object({
+      active: z.boolean().optional(),
+      subscription: z.enum(["FREE", "BASIC", "PRO", "ENTERPRISE"]).optional(),
+      name: z.string().min(2).max(100).optional(),
+      phone: z.string().max(30).optional().or(z.literal("")),
+      address: z.string().max(200).optional().or(z.literal("")),
+    });
+
+    const data = updateAdminTenantSchema.safeParse(body);
+    if (!data.success) {
+      return errorResponse(
+        data.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
+        400
+      );
+    }
+
     const tenant = await prisma.tenant.findUnique({ where: { id } });
     if (!tenant) return errorResponse("Pressing introuvable", 404);
 
     const updateData: Record<string, unknown> = {};
 
-    if (typeof body.active === "boolean") {
-      updateData.active = body.active;
+    if (data.data.active !== undefined) {
+      updateData.active = data.data.active;
     }
-    if (typeof body.subscription === "string") {
-      const validSubs = ["FREE", "BASIC", "PRO", "ENTERPRISE"];
-      if (!validSubs.includes(body.subscription)) {
-        return errorResponse("Abonnement invalide", 400);
-      }
-      updateData.subscription = body.subscription;
-      if (body.subscription !== tenant.subscription) {
+    if (data.data.subscription !== undefined) {
+      updateData.subscription = data.data.subscription;
+      if (data.data.subscription !== tenant.subscription) {
         updateData.subscribedAt = new Date();
       }
     }
-    if (typeof body.name === "string" && body.name.trim()) {
-      updateData.name = body.name.trim();
+    if (data.data.name !== undefined) {
+      updateData.name = data.data.name.trim();
     }
-    if (typeof body.phone === "string") {
-      updateData.phone = body.phone.trim() || null;
+    if (data.data.phone !== undefined) {
+      updateData.phone = data.data.phone.trim() || null;
     }
-    if (typeof body.address === "string") {
-      updateData.address = body.address.trim() || null;
+    if (data.data.address !== undefined) {
+      updateData.address = data.data.address.trim() || null;
     }
 
     const updated = await prisma.tenant.update({
@@ -86,20 +100,21 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     // Supprimer en cascade: audit logs, payments, order items, order status history, orders, customers, services, users, tenant
     await prisma.$transaction(async (tx) => {
-      await tx.auditLog.deleteMany({ where: { tenantId: id } });
-      await tx.payment.deleteMany({ where: { tenantId: id } });
+      const p = tx as typeof prisma;
+      await p.auditLog.deleteMany({ where: { tenantId: id } });
+      await p.payment.deleteMany({ where: { tenantId: id } });
       // Order sub-items via cascading deletes on order
-      const orders = await tx.order.findMany({ where: { tenantId: id }, select: { id: true } });
-      const orderIds = orders.map((o) => o.id);
+      const orders = await p.order.findMany({ where: { tenantId: id }, select: { id: true } });
+      const orderIds = orders.map((o: { id: string }) => o.id);
       if (orderIds.length > 0) {
-        await tx.orderStatusHistory.deleteMany({ where: { orderId: { in: orderIds } } });
-        await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+        await p.orderStatusHistory.deleteMany({ where: { orderId: { in: orderIds } } });
+        await p.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
       }
-      await tx.order.deleteMany({ where: { tenantId: id } });
-      await tx.customer.deleteMany({ where: { tenantId: id } });
-      await tx.service.deleteMany({ where: { tenantId: id } });
-      await tx.user.deleteMany({ where: { tenantId: id } });
-      await tx.tenant.delete({ where: { id } });
+      await p.order.deleteMany({ where: { tenantId: id } });
+      await p.customer.deleteMany({ where: { tenantId: id } });
+      await p.service.deleteMany({ where: { tenantId: id } });
+      await p.user.deleteMany({ where: { tenantId: id } });
+      await p.tenant.delete({ where: { id } });
     });
 
     return successResponse({ deleted: true });

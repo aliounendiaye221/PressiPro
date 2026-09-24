@@ -47,12 +47,13 @@ export async function PUT(
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const updatedOrder = await tx.order.update({
+      const p = tx as typeof prisma;
+      const updatedOrder = await p.order.update({
         where: { id },
         data: { status: newStatus },
       });
 
-      await tx.orderStatusHistory.create({
+      await p.orderStatusHistory.create({
         data: {
           orderId: id,
           fromStatus: order.status,

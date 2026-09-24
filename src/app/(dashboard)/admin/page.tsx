@@ -10,6 +10,7 @@ import {
   ChevronRight, DollarSign, Search, ChevronLeft,
   Package, Phone, Mail, MapPin, BarChart3,
   Filter, Trash2, Power, Crown,
+  Eye, PlusCircle, X,
 } from "lucide-react";
 
 /* ─── Types ─── */
@@ -198,6 +199,23 @@ export default function AdminPage() {
   const [tenantActionLoading, setTenantActionLoading] = useState(false);
   const [selectedSub, setSelectedSub] = useState("");
 
+  // Impersonation state
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+
+  // New tenant creation state
+  const [newTenantModalOpen, setNewTenantModalOpen] = useState(false);
+  const [newTenantLoading, setNewTenantLoading] = useState(false);
+  const [newTenantError, setNewTenantError] = useState<string | null>(null);
+  const [newTenantForm, setNewTenantForm] = useState({
+    name: "",
+    phone: "",
+    address: "",
+    subscription: "FREE",
+    adminName: "",
+    adminEmail: "",
+    adminPassword: "",
+  });
+
   // Orders state
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [ordersTotal, setOrdersTotal] = useState(0);
@@ -208,16 +226,73 @@ export default function AdminPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [hasLoadedOrders, setHasLoadedOrders] = useState(false);
 
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/stats");
+      const data = await res.json();
+      setStatsData(data);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (user && user.role !== "SUPER_ADMIN") {
       router.push("/dashboard");
       return;
     }
-    fetch("/api/admin/stats")
-      .then((r) => r.json())
-      .then(setStatsData)
-      .finally(() => setLoading(false));
-  }, [user, router]);
+    loadStats();
+  }, [user, router, loadStats]);
+
+  const handleImpersonate = async (tenantId: string, tenantName: string) => {
+    if (!confirm(`Se connecter en mode support sur « ${tenantName} » ?`)) return;
+    setImpersonatingId(tenantId);
+    try {
+      const res = await fetch("/api/admin/impersonate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ tenantId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur d'impersonation");
+      window.location.href = "/dashboard";
+    } catch (err: any) {
+      alert(err.message || "Erreur lors de l'impersonation");
+      setImpersonatingId(null);
+    }
+  };
+
+  const handleCreateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setNewTenantLoading(true);
+    setNewTenantError(null);
+    try {
+      const res = await fetch("/api/admin/tenants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(newTenantForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de la création du pressing");
+      setNewTenantModalOpen(false);
+      setNewTenantForm({
+        name: "",
+        phone: "",
+        address: "",
+        subscription: "FREE",
+        adminName: "",
+        adminEmail: "",
+        adminPassword: "",
+      });
+      loadStats();
+    } catch (err: any) {
+      setNewTenantError(err.message);
+    } finally {
+      setNewTenantLoading(false);
+    }
+  };
 
   const fetchCustomers = useCallback(async (page = 1, search = "", tenantId = "") => {
     setCustomersLoading(true);
@@ -1014,8 +1089,151 @@ export default function AdminPage() {
                   <p className="text-xs text-gray-400 hidden sm:block">{tenants.length} pressing{tenants.length > 1 ? "s" : ""} — {tenants.filter((t) => t.active).length} actif{tenants.filter((t) => t.active).length > 1 ? "s" : ""}</p>
                 </div>
               </div>
-              <span className="text-xs font-medium text-gray-400 bg-gray-50 px-2.5 py-1 rounded-full">{tenants.length}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setNewTenantError(null);
+                    setNewTenantModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-semibold shadow-sm transition"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Nouveau Pressing</span>
+                </button>
+                <span className="text-xs font-medium text-gray-400 bg-gray-50 px-2.5 py-1 rounded-full">{tenants.length}</span>
+              </div>
             </div>
+
+            {/* Modal: Nouveau Pressing direct */}
+            {newTenantModalOpen && (
+              <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 bg-primary-50 rounded-lg flex items-center justify-center text-primary-600 font-bold">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <h3 className="font-bold text-gray-900">Créer un nouveau pressing</h3>
+                    </div>
+                    <button
+                      onClick={() => !newTenantLoading && setNewTenantModalOpen(false)}
+                      className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {newTenantError && (
+                    <div className="p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200">
+                      {newTenantError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateTenant} className="space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Pressing</p>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Nom du pressing *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Pressing Moderne Dakar"
+                        value={newTenantForm.name}
+                        onChange={(e) => setNewTenantForm({ ...newTenantForm, name: e.target.value })}
+                        className="input-field w-full text-sm"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Téléphone</label>
+                        <input
+                          type="text"
+                          placeholder="77 123 45 67"
+                          value={newTenantForm.phone}
+                          onChange={(e) => setNewTenantForm({ ...newTenantForm, phone: e.target.value })}
+                          className="input-field w-full text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Abonnement</label>
+                        <select
+                          value={newTenantForm.subscription}
+                          onChange={(e) => setNewTenantForm({ ...newTenantForm, subscription: e.target.value })}
+                          className="input-field w-full text-sm"
+                        >
+                          <option value="FREE">Gratuit</option>
+                          <option value="BASIC">Basic</option>
+                          <option value="PRO">Pro</option>
+                          <option value="ENTERPRISE">Enterprise</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Adresse</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Maristes, Dakar"
+                        value={newTenantForm.address}
+                        onChange={(e) => setNewTenantForm({ ...newTenantForm, address: e.target.value })}
+                        className="input-field w-full text-sm"
+                      />
+                    </div>
+
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400 pt-2 border-t border-gray-100">Compte Gérant (Admin)</p>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Nom du gérant *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Moussa Diop"
+                        value={newTenantForm.adminName}
+                        onChange={(e) => setNewTenantForm({ ...newTenantForm, adminName: e.target.value })}
+                        className="input-field w-full text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Email de connexion *</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="moussa@pressing.sn"
+                        value={newTenantForm.adminEmail}
+                        onChange={(e) => setNewTenantForm({ ...newTenantForm, adminEmail: e.target.value })}
+                        className="input-field w-full text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Mot de passe provisoire *</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="Min. 10 car., 1 maj., 1 chiffre, 1 spécial"
+                        value={newTenantForm.adminPassword}
+                        onChange={(e) => setNewTenantForm({ ...newTenantForm, adminPassword: e.target.value })}
+                        className="input-field w-full text-sm"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => setNewTenantModalOpen(false)}
+                        disabled={newTenantLoading}
+                        className="btn-secondary flex-1 text-sm py-2"
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={newTenantLoading}
+                        className="flex-1 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold py-2 transition disabled:opacity-50"
+                      >
+                        {newTenantLoading ? "Création..." : "Créer le pressing"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
 
             {/* Action modal overlay */}
             {tenantAction && (() => {
@@ -1146,6 +1364,13 @@ export default function AdminPage() {
                   {/* Actions */}
                   <div className="flex gap-2 pt-2 border-t border-gray-100">
                     <button
+                      onClick={() => handleImpersonate(t.id, t.name)}
+                      disabled={impersonatingId === t.id}
+                      className="flex-1 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 px-2.5 py-2 rounded-lg font-semibold transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> {impersonatingId === t.id ? "Connexion..." : "Accéder"}
+                    </button>
+                    <button
                       onClick={() => { setSelectedSub(t.subscription); setTenantAction({ id: t.id, type: "sub" }); }}
                       className="flex-1 text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 px-2.5 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-1"
                     >
@@ -1220,6 +1445,15 @@ export default function AdminPage() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleImpersonate(t.id, t.name)}
+                            disabled={impersonatingId === t.id}
+                            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-xs font-semibold"
+                            title="Se connecter en mode support sur ce pressing"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>{impersonatingId === t.id ? "..." : "Accéder"}</span>
+                          </button>
                           <button
                             onClick={() => { setSelectedSub(t.subscription); setTenantAction({ id: t.id, type: "sub" }); }}
                             className="p-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors" title="Abonnement"

@@ -3,10 +3,12 @@ import { cookies } from "next/headers";
 import { prisma } from "./db";
 import {
   COOKIE_NAME,
+  IMPERSONATOR_COOKIE_NAME,
   verifyToken,
   type SessionPayload,
   createToken,
   tokenCookieOptions,
+  impersonatorCookieOptions,
   SESSION_TTL_SECONDS,
 } from "./auth-shared";
 
@@ -57,9 +59,11 @@ export async function requireSession(): Promise<SessionPayload> {
 
 export {
   COOKIE_NAME,
+  IMPERSONATOR_COOKIE_NAME,
   verifyToken,
   createToken,
   tokenCookieOptions,
+  impersonatorCookieOptions,
   SESSION_TTL_SECONDS,
 };
 export type { SessionPayload };

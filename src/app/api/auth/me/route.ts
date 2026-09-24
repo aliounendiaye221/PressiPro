@@ -1,4 +1,10 @@
-import { createToken, requireSession, tokenCookieOptions } from "@/lib/auth";
+import {
+  createToken,
+  requireSession,
+  tokenCookieOptions,
+  IMPERSONATOR_COOKIE_NAME,
+} from "@/lib/auth";
+import { cookies } from "next/headers";
 import { successResponse, handleApiError, errorResponse } from "@/lib/api-utils";
 import { prisma } from "@/lib/db";
 
@@ -7,6 +13,11 @@ export async function GET() {
     const session = await requireSession();
     const refreshedToken = await createToken(session);
     const opts = tokenCookieOptions();
+
+    const cookieStore = await cookies();
+    const isImpersonated = Boolean(
+      cookieStore.get(IMPERSONATOR_COOKIE_NAME)?.value
+    );
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: session.tenantId },
@@ -25,6 +36,7 @@ export async function GET() {
         role: session.role,
       },
       tenant,
+      isImpersonated,
     });
 
     response.cookies.set(opts.name, refreshedToken, opts);

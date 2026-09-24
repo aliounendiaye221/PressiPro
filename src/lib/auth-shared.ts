@@ -8,6 +8,7 @@ if (!jwtSecretValue || jwtSecretValue.length < 32) {
 const JWT_SECRET = new TextEncoder().encode(jwtSecretValue);
 
 export const COOKIE_NAME = "pressipro-token";
+export const IMPERSONATOR_COOKIE_NAME = "pressipro-impersonator";
 
 export function resolveSessionTtlSeconds() {
   const rawDays = Number.parseInt(process.env.SESSION_TTL_DAYS || "30", 10);
@@ -68,5 +69,16 @@ export function tokenCookieOptions() {
     sameSite: "lax" as const,
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
+  };
+}
+
+export function impersonatorCookieOptions() {
+  return {
+    name: IMPERSONATOR_COOKIE_NAME,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: 4 * 60 * 60, // 4 hours max for support session
   };
 }

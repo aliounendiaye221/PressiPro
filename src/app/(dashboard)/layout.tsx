@@ -15,6 +15,8 @@ import {
   Menu,
   X,
   Shield,
+  ShieldAlert,
+  ArrowLeft,
   ChevronRight,
 } from "lucide-react";
 
@@ -182,6 +184,36 @@ function Sidebar() {
   );
 }
 
+function ImpersonationBanner() {
+  const { isImpersonated, tenant, exitImpersonation } = useAuth();
+  const [exiting, setExiting] = useState(false);
+
+  if (!isImpersonated) return null;
+
+  return (
+    <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-orange-500 text-white px-4 py-2.5 shadow-md flex flex-wrap items-center justify-between gap-3 sticky top-0 z-50">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <ShieldAlert className="w-5 h-5 flex-shrink-0 animate-pulse text-amber-100" />
+        <span>
+          Mode Support Super Admin : connecté sur le pressing{" "}
+          <strong className="underline underline-offset-2">{tenant?.name || "inconnu"}</strong>
+        </span>
+      </div>
+      <button
+        onClick={async () => {
+          setExiting(true);
+          await exitImpersonation();
+        }}
+        disabled={exiting}
+        className="inline-flex items-center gap-1.5 px-3 py-1 bg-white text-amber-800 hover:bg-amber-50 rounded-lg text-xs font-bold transition shadow-sm disabled:opacity-50"
+      >
+        <ArrowLeft className="w-3.5 h-3.5" />
+        {exiting ? "Retour..." : "Quitter et revenir au Super Admin"}
+      </button>
+    </div>
+  );
+}
+
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { loading } = useAuth();
 
@@ -197,13 +229,16 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-50 overflow-x-hidden">
-      <Sidebar />
-      <main className="flex-1 min-w-0 min-h-screen">
-        <div className="pt-16 lg:pt-8 px-4 pb-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-          {children}
-        </div>
-      </main>
+    <div className="min-h-screen flex flex-col bg-gray-50 overflow-x-hidden">
+      <ImpersonationBanner />
+      <div className="flex-1 flex">
+        <Sidebar />
+        <main className="flex-1 min-w-0 min-h-screen">
+          <div className="pt-16 lg:pt-8 px-4 pb-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

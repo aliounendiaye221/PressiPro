@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     // Select the best user to impersonate: preferentially an ADMIN
     const targetUser =
-      tenant.users.find((u: any) => u.role === "ADMIN") || tenant.users[0];
+      tenant.users.find((u: { role: string }) => u.role === "ADMIN") || tenant.users[0];
 
     const targetToken = await createToken({
       userId: targetUser.id,

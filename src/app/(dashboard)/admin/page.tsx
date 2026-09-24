@@ -256,9 +256,9 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erreur d'impersonation");
-      window.location.href = "/dashboard";
-    } catch (err: any) {
-      alert(err.message || "Erreur lors de l'impersonation");
+      window.location.assign("/dashboard");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Erreur lors de l'impersonation");
       setImpersonatingId(null);
     }
   };
@@ -287,8 +287,8 @@ export default function AdminPage() {
         adminPassword: "",
       });
       loadStats();
-    } catch (err: any) {
-      setNewTenantError(err.message);
+    } catch (err: unknown) {
+      setNewTenantError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setNewTenantLoading(false);
     }

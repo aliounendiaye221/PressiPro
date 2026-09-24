@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 import {
-  COOKIE_NAME,
   IMPERSONATOR_COOKIE_NAME,
   verifyToken,
   tokenCookieOptions,

@@ -10,28 +10,44 @@ import { prisma } from "./db";
  * but this approach prevents conflicts at the source.
  */
 export async function generateOrderCode(tenantId: string): Promise<string> {
-  // Atomic increment: lock the max row and increment in one step.
-  // We use a subquery that selects with FOR UPDATE to prevent concurrent reads
-  // from getting the same value before the first transaction commits.
-  const rows = await prisma.$queryRaw<Array<{ nextNum: number }>>`
-    WITH current_max AS (
+  try {
+    const rows = await prisma.$queryRaw<Array<{ nextNum: number | string | bigint }>>`
       SELECT COALESCE(
         MAX(
           CASE
             WHEN "code" ~ '^P-[0-9]+$'
             THEN CAST(SUBSTRING("code" FROM 3) AS INTEGER)
-            ELSE NULL
+            ELSE 0
           END
         ),
         0
-      ) AS "maxNum"
+      ) + 1 AS "nextNum"
       FROM "Order"
       WHERE "tenantId" = ${tenantId}
-      FOR UPDATE
-    )
-    SELECT "maxNum" + 1 AS "nextNum" FROM current_max
-  `;
+    `;
 
-  const nextNum = rows[0]?.nextNum ?? 1;
-  return `P-${String(nextNum).padStart(5, "0")}`;
+    const rawNum = rows[0]?.nextNum;
+    const nextNum = rawNum !== undefined && rawNum !== null ? Number(rawNum) : 1;
+    const validNum = Number.isFinite(nextNum) && nextNum > 0 ? nextNum : 1;
+    return `P-${String(validNum).padStart(5, "0")}`;
+  } catch (error) {
+    console.error("[generateOrderCode] Raw query failed, falling back to prisma findFirst:", error);
+    const lastOrder = await prisma.order.findFirst({
+      where: {
+        tenantId,
+        code: { startsWith: "P-" },
+      },
+      orderBy: { code: "desc" },
+      select: { code: true },
+    });
+
+    let nextNum = 1;
+    if (lastOrder?.code) {
+      const match = lastOrder.code.match(/^P-(\d+)$/);
+      if (match) {
+        nextNum = parseInt(match[1], 10) + 1;
+      }
+    }
+    return `P-${String(nextNum).padStart(5, "0")}`;
+  }
 }

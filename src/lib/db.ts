@@ -9,10 +9,7 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 function createPrismaClient() {
   const logLevels: Prisma.LogLevel[] =
     process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"];
-  // Always use Neon adapter: on Vercel (serverless) it's required for interactive
-  // transactions and FOR UPDATE; locally it ensures consistent behavior with production.
-  // Set PRISMA_USE_NEON_ADAPTER=0 to explicitly disable it (e.g. local non-Neon DB).
-  const shouldUseNeonAdapter = process.env.PRISMA_USE_NEON_ADAPTER !== "0";
+  const shouldUseNeonAdapter = process.env.PRISMA_USE_NEON_ADAPTER === "1" || !process.env.VERCEL;
 
   if (shouldUseNeonAdapter) {
     const adapterConnectionString = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;

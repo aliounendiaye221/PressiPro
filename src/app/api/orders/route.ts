@@ -16,12 +16,45 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("q") || "";
     const status = searchParams.get("status") || "";
+    const unpaid = searchParams.get("unpaid") === "true";
+    const late = searchParams.get("late") === "true";
+    const period = searchParams.get("period") || "";
     const { page, limit } = parsePagination(searchParams, { maxLimit: 50 });
 
     const where: Record<string, unknown> = { tenantId: session.tenantId, deletedAt: null };
 
     if (status && ["RECU", "TRAITEMENT", "PRET", "LIVRE"].includes(status)) {
       where.status = status;
+    }
+
+    if (unpaid) {
+      where.paidAmount = { lt: prisma.order.fields.totalAmount };
+      if (!status) {
+        where.status = { not: "LIVRE" };
+      }
+    }
+
+    if (late) {
+      where.promisedAt = { lt: new Date() };
+      if (!status) {
+        where.status = { notIn: ["LIVRE"] };
+      }
+    }
+
+    if (period) {
+      const now = new Date();
+      if (period === "today") {
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        where.createdAt = { gte: startOfDay };
+      } else if (period === "week") {
+        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const day = startOfWeek.getDay() || 7;
+        startOfWeek.setDate(startOfWeek.getDate() - day + 1);
+        where.createdAt = { gte: startOfWeek };
+      } else if (period === "month") {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        where.createdAt = { gte: startOfMonth };
+      }
     }
 
     if (search) {

@@ -20,18 +20,27 @@ import {
   PlusCircle,
   QrCode,
   MessageCircle,
-  Download,
-  Search,
-  ChevronLeft,
-  ChevronRight,
   Package,
+  ArrowRight,
+  ChevronRight,
 } from "lucide-react";
 import { formatOfflineCacheTime, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { QrScannerModal } from "@/components/qr-scanner-modal";
 import { useAuth } from "@/components/auth-provider";
+import { normalizePhoneForWhatsApp } from "@/lib/phone";
+import { DashboardOnboarding } from "@/components/dashboard-onboarding";
 
 interface DashboardData {
   revenue: { day: number; week: number; month: number };
+  monthlyFinancials?: {
+    revenue: number;
+    expenses: number;
+    netProfit: number;
+    margin: number;
+    isProfit: boolean;
+    expenseCount: number;
+  };
+  hasExpenses?: boolean;
   totalUnpaid: number;
   lateOrders: number;
   ordersByStatus: Record<string, number>;
@@ -177,7 +186,7 @@ function DashboardSkeleton() {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
@@ -186,12 +195,6 @@ export default function DashboardPage() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; val: number; index: number } | null>(null);
 
-  // Journal de Caisse & Traçabilité states
-  const [journalPeriod, setJournalPeriod] = useState<"all" | "today" | "yesterday" | "7d" | "30d">("all");
-  const [journalSearch, setJournalSearch] = useState("");
-  const [journalMethod, setJournalMethod] = useState<string>("ALL");
-  const [journalPage, setJournalPage] = useState(1);
-  const [journalPageSize, setJournalPageSize] = useState<number>(15);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -261,8 +264,9 @@ export default function DashboardPage() {
   };
 
   const openWhatsApp = (phone: string, customerName: string, orderCode: string) => {
-    const message = `Bonjour ${customerName},\nVotre commande ${orderCode} est prête à être récupérée à notre pressing. À très bientôt !`;
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const pressingName = tenant?.name || "PressiPro";
+    const message = `🧺 *${pressingName}*\nBonjour *${customerName || "cher client"}*,\n\nVotre linge déposé sous la commande *${orderCode}* est *PRÊT* et disponible en boutique ! ✨\n\nMerci de votre confiance et à très bientôt ! 🙏`;
+    const cleanPhone = normalizePhoneForWhatsApp(phone) || phone.replace(/[^0-9]/g, "");
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, "_blank");
   };
 
@@ -282,77 +286,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Cash Journal filtering & pagination
-  const filteredPayments = (data?.recentPayments || []).filter((p) => {
-    // Period filter
-    if (journalPeriod !== "all") {
-      const pDate = new Date(p.createdAt);
-      const now = new Date();
-      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-      if (journalPeriod === "today") {
-        if (pDate < startOfToday) return false;
-      } else if (journalPeriod === "yesterday") {
-        const startOfYesterday = new Date(startOfToday);
-        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-        if (pDate < startOfYesterday || pDate >= startOfToday) return false;
-      } else if (journalPeriod === "7d") {
-        const sevenDaysAgo = new Date(startOfToday);
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-        if (pDate < sevenDaysAgo) return false;
-      } else if (journalPeriod === "30d") {
-        const thirtyDaysAgo = new Date(startOfToday);
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
-        if (pDate < thirtyDaysAgo) return false;
-      }
-    }
-
-    // Method filter
-    if (journalMethod !== "ALL" && p.method !== journalMethod) {
-      return false;
-    }
-
-    // Search filter
-    if (journalSearch.trim()) {
-      const q = journalSearch.toLowerCase().trim();
-      const matchCode = p.orderCode.toLowerCase().includes(q);
-      const matchCustomer = p.customerName.toLowerCase().includes(q);
-      const matchAgent = (p.agentName || "").toLowerCase().includes(q);
-      if (!matchCode && !matchCustomer && !matchAgent) return false;
-    }
-
-    return true;
-  });
-
-  const totalFilteredAmount = filteredPayments.reduce((sum, p) => sum + p.amount, 0);
-  const totalPages = Math.max(1, Math.ceil(filteredPayments.length / journalPageSize));
-  const validCurrentPage = Math.min(journalPage, totalPages);
-  const paginatedPayments = filteredPayments.slice(
-    (validCurrentPage - 1) * journalPageSize,
-    validCurrentPage * journalPageSize
-  );
-
-  const exportJournalCSV = () => {
-    if (!filteredPayments || filteredPayments.length === 0) return;
-    const headers = ["Date & Heure", "N° Commande", "Client", "Moyen de Paiement", "Agent Encaisseur", "Montant (FCFA)"];
-    const rows = filteredPayments.map((p) => [
-      `"${new Date(p.createdAt).toLocaleString("fr-SN")}"`,
-      `"${p.orderCode}"`,
-      `"${p.customerName.replace(/"/g, '""')}"`,
-      `"${METHOD_LABELS[p.method] || p.method}"`,
-      `"${(p.agentName || "Agent").replace(/"/g, '""')}"`,
-      p.amount,
-    ]);
-
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `journal_caisse_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   // Calculate dynamic sparkline trend based on current revenue data
   const dayValue = data.revenue.day || (data.revenue.week / 7) || 10000;
@@ -424,32 +357,56 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Onboarding Guide for daily use */}
+      <DashboardOnboarding
+        totalOrders={Object.values(data.ordersByStatus).reduce((a, b) => a + b, 0)}
+        tenantName={tenant?.name}
+        hasWaveOrOm={Boolean(tenant?.waveNumber || tenant?.omNumber)}
+        hasExpenses={data.hasExpenses}
+      />
+
       {/* Revenue KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="card-levitate glow-card glow-card-emerald bg-gradient-to-br from-emerald-50/40 via-white to-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-emerald-200/40 to-transparent rounded-bl-[50px] opacity-70" />
+        <Link
+          href="/orders?period=today"
+          className="card-levitate glow-card glow-card-emerald bg-gradient-to-br from-emerald-50/40 via-white to-white relative overflow-hidden block transition-all hover:scale-[1.02] active:scale-[0.98] group"
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-emerald-200/40 to-transparent rounded-bl-[50px] opacity-70 group-hover:scale-110 transition-transform duration-300" />
           <div className="relative">
             <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <div className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
                 <TrendingUp className="w-5 h-5" />
               </div>
-              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400">CA Jour</span>
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400 group-hover:text-emerald-700 transition-colors">CA Jour</span>
             </div>
             <p className="text-lg sm:text-2xl font-black text-gray-900">{formatFCFA(data.revenue.day)}</p>
+            <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1 group-hover:text-primary-600 transition-colors">
+              <span>Voir les commandes du jour</span>
+              <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+            </p>
           </div>
-        </div>
+        </Link>
 
-        <div className="card-levitate glow-card bg-gradient-to-br from-primary-50/40 via-white to-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-primary-200/40 to-transparent rounded-bl-[50px] opacity-70" />
+        <Link
+          href="/orders?period=week"
+          className="card-levitate glow-card bg-gradient-to-br from-primary-50/40 via-white to-white relative overflow-hidden block transition-all hover:scale-[1.02] active:scale-[0.98] group"
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-primary-200/40 to-transparent rounded-bl-[50px] opacity-70 group-hover:scale-110 transition-transform duration-300" />
           <div className="relative">
             <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-10 h-10 bg-primary-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
+              <div className="w-10 h-10 bg-primary-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20 group-hover:scale-105 transition-transform">
                 <CalendarDays className="w-5 h-5" />
               </div>
-              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400">CA Semaine</span>
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400 group-hover:text-primary-700 transition-colors">CA Semaine</span>
             </div>
             <div className="flex items-end justify-between">
-              <p className="text-lg sm:text-2xl font-black text-gray-900">{formatFCFA(data.revenue.week)}</p>
+              <div>
+                <p className="text-lg sm:text-2xl font-black text-gray-900">{formatFCFA(data.revenue.week)}</p>
+                <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1 group-hover:text-primary-600 transition-colors">
+                  <span>Voir la semaine</span>
+                  <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                </p>
+              </div>
               
               {/* Mini Sparkline Graph */}
               <div className="hidden sm:block absolute right-0 bottom-0 opacity-40 pointer-events-none pr-1 pb-1">
@@ -476,53 +433,132 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        </div>
+        </Link>
 
-        <div className="card-levitate glow-card glow-card-violet bg-gradient-to-br from-violet-50/40 via-white to-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-violet-200/40 to-transparent rounded-bl-[50px] opacity-70" />
+        <Link
+          href="/expenses"
+          className="card-levitate glow-card glow-card-violet bg-gradient-to-br from-violet-50/40 via-white to-white relative overflow-hidden block transition-all hover:scale-[1.02] active:scale-[0.98] group"
+          title="Consulter le bilan mensuel et les dépenses"
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-violet-200/40 to-transparent rounded-bl-[50px] opacity-70 group-hover:scale-110 transition-transform duration-300" />
           <div className="relative">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-10 h-10 bg-violet-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-violet-600/20">
-                <Calendar className="w-5 h-5" />
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 bg-violet-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-violet-600/20 group-hover:scale-105 transition-transform">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400 group-hover:text-violet-700 transition-colors">CA Mois</span>
               </div>
-              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400">CA Mois</span>
+              {data.monthlyFinancials && (
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${data.monthlyFinancials.isProfit ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                  {data.monthlyFinancials.margin}% marge
+                </span>
+              )}
             </div>
             <p className="text-lg sm:text-2xl font-black text-gray-900">{formatFCFA(data.revenue.month)}</p>
+            {data.monthlyFinancials && data.monthlyFinancials.expenses > 0 ? (
+              <p className="text-[11px] text-gray-500 mt-1 flex items-center gap-1">
+                <span>Dépenses: <strong className="text-red-600">-{formatFCFA(data.monthlyFinancials.expenses)}</strong></span>
+                <span>•</span>
+                <span>Net: <strong className={data.monthlyFinancials.isProfit ? "text-emerald-600" : "text-red-600"}>{data.monthlyFinancials.isProfit ? "+" : ""}{formatFCFA(data.monthlyFinancials.netProfit)}</strong></span>
+              </p>
+            ) : (
+              <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1 group-hover:text-primary-600 transition-colors">
+                <span>Consulter le bilan du mois</span>
+                <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+              </p>
+            )}
           </div>
-        </div>
+        </Link>
 
-        <div className="card-levitate glow-card glow-card-red bg-gradient-to-br from-red-50/40 via-white to-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-red-200/40 to-transparent rounded-bl-[50px] opacity-70" />
+        <Link
+          href="/orders?unpaid=true"
+          className="card-levitate glow-card glow-card-red bg-gradient-to-br from-red-50/40 via-white to-white relative overflow-hidden block transition-all hover:scale-[1.02] active:scale-[0.98] group"
+          title="Cliquez pour afficher toutes les commandes impayées"
+        >
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-red-200/40 to-transparent rounded-bl-[50px] opacity-70 group-hover:scale-110 transition-transform duration-300" />
           <div className="relative">
             <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-10 h-10 bg-red-500 text-white rounded-xl flex items-center justify-center shadow-lg shadow-red-500/20">
+              <div className="w-10 h-10 bg-red-500 text-white rounded-xl flex items-center justify-center shadow-lg shadow-red-500/20 group-hover:scale-105 transition-transform">
                 <AlertTriangle className="w-5 h-5" />
               </div>
-              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400">Impayés</span>
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-400 group-hover:text-red-700 transition-colors">Impayés</span>
             </div>
             <p className="text-lg sm:text-2xl font-black text-red-600">{formatFCFA(data.totalUnpaid)}</p>
+            <p className="text-[11px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+              <span>Voir tous les impayés</span>
+              <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+            </p>
           </div>
-        </div>
+        </Link>
       </div>
+
+      {/* Synchronized Financial Health Ribbon */}
+      {data.monthlyFinancials && data.monthlyFinancials.revenue > 0 && (
+        <div className="bg-gradient-to-r from-emerald-500/10 via-primary-500/5 to-white border border-emerald-500/20 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-white shrink-0 shadow-xs ${data.monthlyFinancials.isProfit ? "bg-emerald-600" : "bg-red-600"}`}>
+              {data.monthlyFinancials.isProfit ? "✓" : "!"}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-extrabold text-sm text-gray-900">
+                  {data.monthlyFinancials.isProfit ? "Bilan Mensuel Positif (Bénéfice)" : "Bilan Mensuel Déficitaire"}
+                </span>
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${data.monthlyFinancials.isProfit ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                  Marge nette : {data.monthlyFinancials.margin}%
+                </span>
+              </div>
+              <p className="text-xs text-gray-600 mt-0.5">
+                Revenus encaissés : <strong className="text-gray-900">{formatFCFA(data.monthlyFinancials.revenue)}</strong> · Dépenses saisies : <strong className="text-red-600">-{formatFCFA(data.monthlyFinancials.expenses)}</strong> · Gain net : <strong className={data.monthlyFinancials.isProfit ? "text-emerald-700 font-black" : "text-red-700 font-black"}>{data.monthlyFinancials.isProfit ? "+" : ""}{formatFCFA(data.monthlyFinancials.netProfit)}</strong>
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/expenses"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200/80 shadow-xs transition-colors self-start sm:self-auto shrink-0"
+          >
+            <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Gérer Dépenses & Bilan</span>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+          </Link>
+        </div>
+      )}
 
       {/* Status grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
         {statusConfig.map(({ key, label, icon: Icon, bg, text, glow }) => (
-          <div key={key} className={`card-levitate rounded-2xl bg-white p-4 text-center border border-gray-100 shadow-sm cursor-pointer group hover:bg-gradient-to-b hover:from-white hover:to-gray-50/20 ${glow}`}>
+          <Link
+            key={key}
+            href={`/orders?status=${key}`}
+            className={`card-levitate rounded-2xl bg-white p-4 text-center border border-gray-100 shadow-sm cursor-pointer group hover:bg-gradient-to-b hover:from-white hover:to-gray-50/20 transition-all hover:scale-[1.03] active:scale-[0.97] block ${glow}`}
+            title={`Filtrer par statut: ${label}`}
+          >
             <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center mx-auto mb-2 transition-all duration-300 group-hover:scale-110 group-hover:shadow-md`}>
               <Icon className={`w-5 h-5 ${text}`} />
             </div>
             <p className="text-2xl font-black text-gray-900 transition-colors duration-300 group-hover:text-primary-600">{data.ordersByStatus[key] || 0}</p>
-            <p className="text-xs text-gray-500 mt-1 font-semibold">{label}</p>
-          </div>
+            <p className="text-xs text-gray-500 mt-1 font-semibold flex items-center justify-center gap-1">
+              <span>{label}</span>
+              <span className="text-gray-300 group-hover:text-primary-600 text-[10px] transition-colors">→</span>
+            </p>
+          </Link>
         ))}
-        <div className="card-levitate rounded-2xl bg-white p-4 text-center border border-gray-100 shadow-sm cursor-pointer group hover:bg-gradient-to-b hover:from-white hover:to-red-50/10 hover:shadow-red-500/10 hover:border-red-200 col-span-2 sm:col-span-1">
+        <Link
+          href="/orders?late=true"
+          className="card-levitate rounded-2xl bg-white p-4 text-center border border-gray-100 shadow-sm cursor-pointer group hover:bg-gradient-to-b hover:from-white hover:to-red-50/10 hover:shadow-red-500/10 hover:border-red-200 col-span-2 sm:col-span-1 transition-all hover:scale-[1.03] active:scale-[0.97] block"
+          title="Afficher les commandes en retard de livraison"
+        >
           <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center mx-auto mb-2 transition-all duration-300 group-hover:scale-110 group-hover:shadow-md">
             <AlertTriangle className="w-5 h-5 text-red-500" />
           </div>
           <p className="text-2xl font-black text-red-600">{data.lateOrders}</p>
-          <p className="text-xs text-gray-500 mt-1 font-semibold">En retard</p>
-        </div>
+          <p className="text-xs text-gray-500 mt-1 font-semibold flex items-center justify-center gap-1">
+            <span>En retard</span>
+            <span className="text-red-300 group-hover:text-red-600 text-[10px] transition-colors">→</span>
+          </p>
+        </Link>
       </div>
 
       {/* Graphique de Tendance Hebdomadaire Interactif */}
@@ -641,9 +677,18 @@ export default function DashboardPage() {
       {/* Payments by method today */}
       {data.paymentsByMethod.length > 0 && (
         <div className="card">
-          <div className="flex items-center gap-2 mb-5">
-            <Banknote className="w-5 h-5 text-gray-400" />
-            <h2 className="text-lg font-semibold text-gray-900">Paiements du jour</h2>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <Banknote className="w-5 h-5 text-gray-400" />
+              <h2 className="text-lg font-semibold text-gray-900">Paiements du jour</h2>
+            </div>
+            <Link
+              href="/caisse"
+              className="text-xs font-semibold text-primary-600 hover:text-primary-700 hover:underline inline-flex items-center gap-1"
+            >
+              <span>Journal de Caisse complet</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
             {data.paymentsByMethod.map((p) => {
@@ -658,252 +703,6 @@ export default function DashboardPage() {
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* Journal de Caisse & Traçabilité des Encaissements (Élargi) */}
-      {data.recentPayments && data.recentPayments.length > 0 && (
-        <div className="card space-y-4">
-          {/* En-tête & Export */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-gray-100 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center shrink-0">
-                <Banknote className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-gray-900">Journal de Caisse & Encaissements</h2>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100/80 text-emerald-800">
-                    {filteredPayments.length} transaction{filteredPayments.length > 1 ? "s" : ""}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Traçabilité continue des encaissements et règlements enregistrés
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 self-start md:self-auto">
-              <button
-                type="button"
-                onClick={exportJournalCSV}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 shadow-sm transition-colors cursor-pointer"
-                title="Télécharger le journal au format CSV"
-              >
-                <Download className="w-3.5 h-3.5 text-gray-500" />
-                <span>Exporter CSV</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Synthèse financière sur la sélection */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 bg-gray-50/70 p-3 rounded-xl border border-gray-100/80">
-            <div>
-              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">Total Encaissé</span>
-              <span className="text-lg font-extrabold text-emerald-600 font-mono">
-                {formatFCFA(totalFilteredAmount)}
-              </span>
-            </div>
-            <div>
-              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">Espèces</span>
-              <span className="text-sm font-bold text-gray-800 font-mono">
-                {formatFCFA(filteredPayments.filter((p) => p.method === "CASH").reduce((s, p) => s + p.amount, 0))}
-              </span>
-            </div>
-            <div>
-              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">Wave</span>
-              <span className="text-sm font-bold text-gray-800 font-mono">
-                {formatFCFA(filteredPayments.filter((p) => p.method === "WAVE").reduce((s, p) => s + p.amount, 0))}
-              </span>
-            </div>
-            <div>
-              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">Orange Money</span>
-              <span className="text-sm font-bold text-gray-800 font-mono">
-                {formatFCFA(filteredPayments.filter((p) => p.method === "OM").reduce((s, p) => s + p.amount, 0))}
-              </span>
-            </div>
-          </div>
-
-          {/* Barre d'outils : Onglets de période + Recherche + Filtres */}
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-1">
-            {/* Filtres par période */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 text-xs">
-              {[
-                { id: "all", label: "Tout l'historique" },
-                { id: "today", label: "Aujourd'hui" },
-                { id: "yesterday", label: "Hier" },
-                { id: "7d", label: "7 derniers jours" },
-                { id: "30d", label: "Ce mois" },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => {
-                    setJournalPeriod(tab.id as "all" | "today" | "yesterday" | "7d" | "30d");
-                    setJournalPage(1);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
-                    journalPeriod === tab.id
-                      ? "bg-primary-600 text-white shadow-sm"
-                      : "bg-gray-100/80 text-gray-600 hover:bg-gray-200/80"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Recherche & Filtre mode & Taille de page */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 sm:w-60">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={journalSearch}
-                  onChange={(e) => {
-                    setJournalSearch(e.target.value);
-                    setJournalPage(1);
-                  }}
-                  placeholder="Rechercher (cmd, client, agent)..."
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 transition-colors"
-                />
-              </div>
-
-              <select
-                value={journalMethod}
-                onChange={(e) => {
-                  setJournalMethod(e.target.value);
-                  setJournalPage(1);
-                }}
-                className="py-1.5 px-2.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 text-gray-700"
-              >
-                <option value="ALL">Tous modes</option>
-                <option value="CASH">Espèces</option>
-                <option value="WAVE">Wave</option>
-                <option value="OM">Orange Money</option>
-                <option value="OTHER">Autre</option>
-              </select>
-
-              <select
-                value={journalPageSize}
-                onChange={(e) => {
-                  setJournalPageSize(Number(e.target.value));
-                  setJournalPage(1);
-                }}
-                className="py-1.5 px-2.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 text-gray-700 font-medium"
-                title="Nombre de lignes par page"
-              >
-                <option value={10}>10 / page</option>
-                <option value={15}>15 / page</option>
-                <option value={25}>25 / page</option>
-                <option value={50}>50 / page</option>
-                <option value={9999}>Tout voir</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Tableau élargi */}
-          <div className="overflow-x-auto -mx-4 sm:mx-0 border border-gray-100 rounded-xl">
-            <table className="w-full text-sm min-w-[560px]">
-              <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-100 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="py-2.5 px-3.5">Date & Heure</th>
-                  <th className="py-2.5 px-3.5">Commande</th>
-                  <th className="py-2.5 px-3.5">Client</th>
-                  <th className="py-2.5 px-3.5">Mode</th>
-                  <th className="py-2.5 px-3.5">Agent Encaisseur</th>
-                  <th className="py-2.5 px-3.5 text-right">Montant</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100/70 bg-white">
-                {paginatedPayments.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-10 text-center text-gray-400 text-xs">
-                      Aucun encaissement ne correspond aux filtres actuels.
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedPayments.map((p) => {
-                    const MethodIcon = METHOD_ICONS[p.method] || Wallet;
-                    return (
-                      <tr key={p.id} className="hover:bg-gray-50/60 transition-colors">
-                        <td className="py-3 px-3.5 text-xs text-gray-500 font-mono whitespace-nowrap">
-                          {new Date(p.createdAt).toLocaleString("fr-SN", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </td>
-                        <td className="py-3 px-3.5 font-mono font-semibold">
-                          <Link
-                            href={p.orderId ? `/orders/${p.orderId}` : `/orders?q=${encodeURIComponent(p.orderCode)}`}
-                            className="text-primary-600 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
-                            title="Consulter la commande"
-                          >
-                            <span>{p.orderCode}</span>
-                          </Link>
-                        </td>
-                        <td className="py-3 px-3.5 font-medium text-gray-900">{p.customerName}</td>
-                        <td className="py-3 px-3.5">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                            <MethodIcon className="w-3 h-3 text-gray-500" />
-                            {METHOD_LABELS[p.method] || p.method}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3.5 text-xs text-gray-600 font-medium">
-                          <span className="inline-block px-2 py-0.5 rounded bg-gray-50 border border-gray-100 text-gray-700">
-                            {p.agentName || "Agent"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3.5 text-right font-bold text-emerald-600 font-mono whitespace-nowrap">
-                          +{formatFCFA(p.amount)}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination & Compteur */}
-          {filteredPayments.length > 0 && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-xs text-gray-500 border-t border-gray-100">
-              <div>
-                Affichage de <span className="font-semibold text-gray-700">{(validCurrentPage - 1) * journalPageSize + 1}</span> à{" "}
-                <span className="font-semibold text-gray-700">{Math.min(validCurrentPage * journalPageSize, filteredPayments.length)}</span> sur{" "}
-                <span className="font-semibold text-gray-700">{filteredPayments.length}</span> encaissement{filteredPayments.length > 1 ? "s" : ""}
-              </div>
-
-              {totalPages > 1 && (
-                <div className="flex items-center gap-2 self-end sm:self-auto">
-                  <button
-                    type="button"
-                    disabled={validCurrentPage <= 1}
-                    onClick={() => setJournalPage((prev) => Math.max(prev - 1, 1))}
-                    className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                    title="Page précédente"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <span className="font-medium text-gray-700 px-1">
-                    Page {validCurrentPage} sur {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={validCurrentPage >= totalPages}
-                    onClick={() => setJournalPage((prev) => Math.min(prev + 1, totalPages))}
-                    className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                    title="Page suivante"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 

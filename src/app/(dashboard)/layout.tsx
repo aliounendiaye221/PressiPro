@@ -18,12 +18,17 @@ import {
   ShieldAlert,
   ArrowLeft,
   ChevronRight,
+  Wallet,
+  Sparkles,
+  Banknote,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/orders", label: "Commandes", icon: ClipboardList },
   { href: "/orders/new", label: "Nouveau dépôt", icon: PlusCircle },
+  { href: "/caisse", label: "Journal de Caisse", icon: Banknote },
+  { href: "/expenses", label: "Dépenses & Bilan", icon: Wallet },
   { href: "/customers", label: "Clients", icon: Users },
   { href: "/settings", label: "Paramètres", icon: Settings },
 ];
@@ -32,10 +37,14 @@ const SUPER_ADMIN_NAV = [
   { href: "/admin", label: "Admin SaaS", icon: Shield },
 ];
 
-function Sidebar() {
+interface SidebarProps {
+  mobileOpen: boolean;
+  setMobileOpen: (open: boolean) => void;
+}
+
+function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
   const pathname = usePathname();
   const { user, tenant, logout } = useAuth();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const navItems = isSuperAdmin
@@ -44,36 +53,24 @@ function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger */}
-      <button
-        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 bg-white rounded-xl shadow-lg border border-gray-200/50 hover:bg-gray-50 transition-all duration-200"
-        onClick={() => setMobileOpen(!mobileOpen)}
-        aria-label="Menu"
-      >
-        {mobileOpen ? (
-          <X className="w-5 h-5 text-gray-700" />
-        ) : (
-          <Menu className="w-5 h-5 text-gray-700" />
-        )}
-      </button>
-
-      {/* Overlay */}
+      {/* Mobile Backdrop Overlay */}
       {mobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/40 z-30 transition-opacity"
+          className="lg:hidden fixed inset-0 bg-gray-900/60 backdrop-blur-xs z-50 transition-opacity animate-fade-in"
           onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar Drawer */}
       <aside
         className={cn(
-          "fixed lg:static inset-y-0 left-0 z-40 w-[280px] bg-white border-r border-gray-200/60 flex flex-col transition-transform duration-300 lg:translate-x-0",
+          "fixed lg:static inset-y-0 left-0 z-50 w-[285px] bg-white border-r border-gray-200/70 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 shadow-2xl lg:shadow-none",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Logo / Header */}
-        <div className="p-6 pb-4">
+        {/* Logo / Header with Close Button on Mobile */}
+        <div className="p-5 pb-4 border-b border-gray-100 flex items-center justify-between">
           <Link
             href="/"
             onClick={() => setMobileOpen(false)}
@@ -85,31 +82,41 @@ function Sidebar() {
               <img
                 src={tenant.logoUrl}
                 alt={tenant.name}
-                className="w-10 h-10 rounded-xl object-cover shadow-lg ring-1 ring-gray-200/80"
+                className="w-10 h-10 rounded-xl object-cover shadow-md ring-1 ring-gray-200/80"
               />
             ) : (
-              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/30">
-                <span className="text-white font-bold text-lg">P</span>
+              <div className="w-10 h-10 bg-gradient-to-br from-primary-600 via-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/25">
+                <span className="text-white font-black text-lg">P</span>
               </div>
             )}
-            <div>
-              <h1 className="text-lg font-bold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent">
+            <div className="min-w-0">
+              <h1 className="text-lg font-extrabold bg-gradient-to-r from-primary-700 to-primary-500 bg-clip-text text-transparent truncate">
                 PressiPro
               </h1>
               {tenant && (
-                <p className="text-xs text-gray-500 truncate max-w-[160px]">
+                <p className="text-xs text-gray-500 truncate max-w-[150px] font-medium">
                   {tenant.name}
                 </p>
               )}
             </div>
           </Link>
+
+          {/* Close button on mobile drawer */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+            aria-label="Fermer le menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+        {/* Navigation list */}
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
           {isSuperAdmin && (
-            <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-              Plateforme
+            <p className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Super Admin SaaS
             </p>
           )}
 
@@ -121,7 +128,7 @@ function Sidebar() {
                 pathname.startsWith(item.href));
             const Icon = item.icon;
 
-            // Section separator for tenant nav when super admin
+            // Section separator for pressing nav when super admin
             const showSeparator = isSuperAdmin && idx === SUPER_ADMIN_NAV.length;
 
             return (
@@ -129,8 +136,8 @@ function Sidebar() {
                 {showSeparator && (
                   <>
                     <div className="my-3 border-t border-gray-100" />
-                    <p className="px-4 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-                      Pressing
+                    <p className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                      Gestion du pressing
                     </p>
                   </>
                 )}
@@ -138,13 +145,16 @@ function Sidebar() {
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={cn(
-                    isActive ? "sidebar-link-active" : "sidebar-link"
+                    "flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150",
+                    isActive
+                      ? "bg-primary-50 text-primary-700 font-semibold shadow-xs"
+                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   )}
                 >
-                  <Icon className="w-[18px] h-[18px] shrink-0" />
-                  <span className="flex-1">{item.label}</span>
+                  <Icon className={cn("w-5 h-5 shrink-0", isActive ? "text-primary-600" : "text-gray-400")} />
+                  <span className="flex-1 truncate">{item.label}</span>
                   {isActive && (
-                    <ChevronRight className="w-4 h-4 text-primary-400" />
+                    <ChevronRight className="w-4 h-4 text-primary-400 shrink-0" />
                   )}
                 </Link>
               </div>
@@ -152,17 +162,17 @@ function Sidebar() {
           })}
         </nav>
 
-        {/* User footer */}
-        <div className="p-4 border-t border-gray-100/80">
-          <div className="flex items-center gap-3 mb-3 p-2 rounded-xl bg-gray-50/80">
-            <div className="w-9 h-9 bg-gradient-to-br from-primary-400 to-primary-600 text-white rounded-xl flex items-center justify-center text-sm font-bold shadow-sm">
+        {/* User profile footer */}
+        <div className="p-3.5 border-t border-gray-100/90 bg-gray-50/50">
+          <div className="flex items-center gap-3 mb-2.5 p-2 rounded-xl bg-white border border-gray-200/60 shadow-xs">
+            <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-700 text-white rounded-xl flex items-center justify-center text-sm font-bold shadow-xs shrink-0">
               {user?.name?.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-800 truncate">
+              <p className="text-sm font-bold text-gray-800 truncate">
                 {user?.name}
               </p>
-              <p className="text-[11px] text-gray-500">
+              <p className="text-[11px] text-gray-500 truncate font-medium">
                 {user?.role === "SUPER_ADMIN"
                   ? "Super Admin"
                   : user?.role === "ADMIN"
@@ -172,8 +182,9 @@ function Sidebar() {
             </div>
           </div>
           <button
+            type="button"
             onClick={logout}
-            className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200"
+            className="flex items-center justify-center gap-2 w-full px-3 py-2 text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200"
           >
             <LogOut className="w-4 h-4" />
             Déconnexion
@@ -184,6 +195,133 @@ function Sidebar() {
   );
 }
 
+function MobileTopBar({ setMobileOpen }: { setMobileOpen: (open: boolean) => void }) {
+  const { tenant } = useAuth();
+
+  return (
+    <header className="lg:hidden sticky top-0 z-30 h-14 bg-white/95 backdrop-blur-md border-b border-gray-200/80 px-3.5 flex items-center justify-between shadow-xs">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          className="p-2 -ml-1 text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors active:scale-95"
+          aria-label="Ouvrir le menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
+        <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+          {tenant?.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={tenant.logoUrl}
+              alt={tenant.name}
+              className="w-7 h-7 rounded-lg object-cover ring-1 ring-gray-200 shrink-0"
+            />
+          ) : (
+            <div className="w-7 h-7 bg-gradient-to-br from-primary-600 to-primary-700 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-xs shrink-0">
+              P
+            </div>
+          )}
+          <span className="font-extrabold text-sm text-gray-900 truncate">
+            {tenant?.name || "PressiPro"}
+          </span>
+        </Link>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <Link
+          href="/orders/new"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 active:scale-95 rounded-xl shadow-xs transition-all"
+        >
+          <PlusCircle className="w-3.5 h-3.5" />
+          <span>Dépôt</span>
+        </Link>
+      </div>
+    </header>
+  );
+}
+
+function MobileBottomNav({ setMobileOpen }: { setMobileOpen: (open: boolean) => void }) {
+  const pathname = usePathname();
+
+  const isTabActive = (href: string) => {
+    if (href === "/dashboard") return pathname === "/dashboard";
+    if (href === "/orders") return pathname === "/orders";
+    if (href === "/orders/new") return pathname === "/orders/new";
+    if (href === "/expenses") return pathname === "/expenses";
+    return pathname.startsWith(href);
+  };
+
+  return (
+    <nav
+      aria-label="Navigation mobile"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-200/80 shadow-[0_-4px_25px_rgba(0,0,0,0.06)] px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around"
+    >
+      {/* 1. Dashboard */}
+      <Link
+        href="/dashboard"
+        className={cn(
+          "flex flex-col items-center justify-center flex-1 py-1 text-center transition-colors min-w-0",
+          isTabActive("/dashboard") ? "text-primary-600 font-bold" : "text-gray-500 hover:text-gray-900"
+        )}
+      >
+        <LayoutDashboard className="w-5 h-5 mb-0.5 shrink-0" />
+        <span className="text-[10px] leading-tight truncate">Accueil</span>
+      </Link>
+
+      {/* 2. Commandes */}
+      <Link
+        href="/orders"
+        className={cn(
+          "flex flex-col items-center justify-center flex-1 py-1 text-center transition-colors min-w-0",
+          isTabActive("/orders") ? "text-primary-600 font-bold" : "text-gray-500 hover:text-gray-900"
+        )}
+      >
+        <ClipboardList className="w-5 h-5 mb-0.5 shrink-0" />
+        <span className="text-[10px] leading-tight truncate">Commandes</span>
+      </Link>
+
+      {/* 3. Nouveau Dépôt (Elevated Center Button) */}
+      <div className="flex-1 flex justify-center -mt-5">
+        <Link
+          href="/orders/new"
+          className="flex flex-col items-center group active:scale-95 transition-transform"
+          aria-label="Créer un nouveau dépôt"
+        >
+          <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary-700 via-primary-600 to-primary-500 text-white flex items-center justify-center shadow-lg shadow-primary-500/35 ring-4 ring-white">
+            <PlusCircle className="w-6 h-6 group-hover:rotate-90 transition-transform duration-200" />
+          </div>
+          <span className="text-[10px] font-bold text-primary-700 mt-1">Dépôt</span>
+        </Link>
+      </div>
+
+      {/* 4. Dépenses & Bilan */}
+      <Link
+        href="/expenses"
+        className={cn(
+          "flex flex-col items-center justify-center flex-1 py-1 text-center transition-colors min-w-0",
+          isTabActive("/expenses") ? "text-primary-600 font-bold" : "text-gray-500 hover:text-gray-900"
+        )}
+      >
+        <Wallet className="w-5 h-5 mb-0.5 shrink-0" />
+        <span className="text-[10px] leading-tight truncate">Dépenses</span>
+      </Link>
+
+      {/* 5. Plus (Opens Drawer Menu) */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        className="flex flex-col items-center justify-center flex-1 py-1 text-center text-gray-500 hover:text-gray-900 transition-colors min-w-0"
+        aria-label="Plus d'options"
+      >
+        <Menu className="w-5 h-5 mb-0.5 shrink-0" />
+        <span className="text-[10px] leading-tight truncate">Menu</span>
+      </button>
+    </nav>
+  );
+}
+
 function ImpersonationBanner() {
   const { isImpersonated, tenant, exitImpersonation } = useAuth();
   const [exiting, setExiting] = useState(false);
@@ -191,24 +329,25 @@ function ImpersonationBanner() {
   if (!isImpersonated) return null;
 
   return (
-    <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-orange-500 text-white px-4 py-2.5 shadow-md flex flex-wrap items-center justify-between gap-3 sticky top-0 z-50">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <ShieldAlert className="w-5 h-5 flex-shrink-0 animate-pulse text-amber-100" />
+    <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-orange-500 text-white px-4 py-2 shadow-md flex flex-wrap items-center justify-between gap-2 sticky top-0 z-40 text-xs sm:text-sm">
+      <div className="flex items-center gap-2 font-medium">
+        <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 animate-pulse text-amber-100" />
         <span>
-          Mode Support Super Admin : connecté sur le pressing{" "}
+          Support Super Admin : pressing{" "}
           <strong className="underline underline-offset-2">{tenant?.name || "inconnu"}</strong>
         </span>
       </div>
       <button
+        type="button"
         onClick={async () => {
           setExiting(true);
           await exitImpersonation();
         }}
         disabled={exiting}
-        className="inline-flex items-center gap-1.5 px-3 py-1 bg-white text-amber-800 hover:bg-amber-50 rounded-lg text-xs font-bold transition shadow-sm disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white text-amber-800 hover:bg-amber-50 rounded-lg text-xs font-bold transition shadow-xs disabled:opacity-50"
       >
         <ArrowLeft className="w-3.5 h-3.5" />
-        {exiting ? "Retour..." : "Quitter et revenir au Super Admin"}
+        {exiting ? "Retour..." : "Quitter"}
       </button>
     </div>
   );
@@ -216,6 +355,7 @@ function ImpersonationBanner() {
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { loading } = useAuth();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   if (loading) {
     return (
@@ -231,14 +371,16 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 overflow-x-hidden">
       <ImpersonationBanner />
+      <MobileTopBar setMobileOpen={setMobileOpen} />
       <div className="flex-1 flex">
-        <Sidebar />
+        <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
         <main className="flex-1 min-w-0 min-h-screen">
-          <div className="pt-16 lg:pt-8 px-4 pb-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+          <div className="pt-3 sm:pt-6 lg:pt-8 pb-28 lg:pb-8 px-3 sm:px-6 lg:px-8 max-w-7xl mx-auto">
             {children}
           </div>
         </main>
       </div>
+      <MobileBottomNav setMobileOpen={setMobileOpen} />
     </div>
   );
 }

@@ -482,7 +482,7 @@ export default function NewOrderPage() {
 
         {/* Right: Cart + Total */}
         <div className="space-y-4">
-          <div className="card lg:sticky lg:top-4">
+          <div id="cart-card" className="card lg:sticky lg:top-4 scroll-mt-20">
             <h2 className="font-semibold mb-3 flex items-center gap-2"><ShoppingCart className="w-4 h-4 text-primary-600" /> Panier</h2>
 
             {cart.length === 0 ? (
@@ -671,6 +671,33 @@ export default function NewOrderPage() {
           </div>
         </div>
       </div>
+
+      {/* Mobile Floating Cart Summary Bar */}
+      {cart.length > 0 && (
+        <div className="lg:hidden fixed bottom-16 inset-x-0 z-30 px-4 py-2.5 bg-white/95 backdrop-blur-md border-t border-gray-200/90 shadow-xl flex items-center justify-between">
+          <div className="min-w-0 pr-2">
+            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">
+              {cart.reduce((s, i) => s + i.quantity, 0)} article{cart.length > 1 ? "s" : ""}
+            </span>
+            <p className="text-base font-black text-gray-900 leading-tight">
+              {formatFCFA(Math.max(0, total - discountAmount))}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById("cart-card");
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth" });
+              }
+            }}
+            className="btn-primary py-2 px-3.5 text-xs font-bold flex items-center gap-1.5 shadow-md shadow-primary-500/25 shrink-0"
+          >
+            <ShoppingCart className="w-3.5 h-3.5" />
+            <span>Valider le panier ↓</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

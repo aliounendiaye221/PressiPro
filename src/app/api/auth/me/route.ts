@@ -21,7 +21,7 @@ export async function GET() {
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: session.tenantId },
-      select: { id: true, name: true, phone: true, address: true, logoUrl: true },
+      select: { id: true, name: true, phone: true, address: true, logoUrl: true, waveNumber: true, omNumber: true },
     });
 
     if (!tenant && session.role !== "SUPER_ADMIN") {

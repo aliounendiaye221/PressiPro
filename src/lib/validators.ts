@@ -100,3 +100,26 @@ export const createUserSchema = z.object({
   name: z.string().min(2).max(100),
   role: z.enum(["ADMIN", "AGENT"]),
 });
+
+// ─── Expense ────────────────────────────────────────────────
+export const expenseCategoryEnum = z.enum([
+  "PRODUITS",
+  "LIVRAISON",
+  "MATERIEL",
+  "CHARGES_FIXES",
+  "SALAIRES",
+  "AUTRE",
+]);
+
+export const createExpenseSchema = z.object({
+  description: z.string().min(1, "La description est requise").max(200),
+  amount: z.number().int().min(1, "Le montant doit être au moins 1 FCFA"),
+  category: expenseCategoryEnum.default("AUTRE"),
+  date: z.string().optional(),
+  paymentMethod: z.enum(["CASH", "OM", "WAVE", "OTHER"]).default("CASH"),
+  supplier: z.string().max(100).optional().or(z.literal("")),
+  notes: z.string().max(500).optional().or(z.literal("")),
+});
+
+export const updateExpenseSchema = createExpenseSchema.partial();
+

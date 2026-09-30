@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/components/auth-provider";
 import {
   createOfflineTempId,
@@ -36,6 +37,7 @@ import {
 } from "lucide-react";
 import { printDirectlyPOS } from "@/lib/receipt/escpos";
 import { normalizePhoneForWhatsApp } from "@/lib/phone";
+import { EditOrderModal } from "@/components/edit-order-modal";
 
 interface OrderDetail {
   id: string;
@@ -49,7 +51,16 @@ interface OrderDetail {
   promisedAt: string | null;
   createdAt: string;
   customer: { id: string; name: string; phone: string; email?: string };
-  items: { id: string; name: string; quantity: number; unitPrice: number; total: number }[];
+  items: {
+    id: string;
+    serviceId: string;
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    weight?: number | null;
+    pricingType?: string;
+    total: number;
+  }[];
   payments: { id: string; amount: number; method: string; createdAt: string; note?: string; agentName?: string }[];
   statusHistory: { id: string; fromStatus: string | null; toStatus: string; createdAt: string; note?: string }[];
 }
@@ -99,7 +110,7 @@ function buildWhatsAppUrl(normalizedPhone: string, message: string) {
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -112,6 +123,7 @@ export default function OrderDetailPage() {
   const [payMethod, setPayMethod] = useState("CASH");
 
   // Edit states
+  const [showEditModal, setShowEditModal] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [editNotes, setEditNotes] = useState("");
   const [editingDate, setEditingDate] = useState(false);
@@ -356,6 +368,9 @@ export default function OrderDetailPage() {
       }
 
       await fetchOrder();
+      if (next === "PRET") {
+        setSyncMessage("Commande passée à PRÊT ! Cliquez sur « WhatsApp — Notifier commande prête » pour avertir le client instantanément.");
+      }
     } catch {
       queueStatusChange(next);
     } finally {
@@ -551,10 +566,24 @@ export default function OrderDetailPage() {
   const nextAction = nextStatus ? STATUS_ACTIONS[order.status] : null;
   const buildWhatsAppMessage = (kind: "receipt" | "ready") => {
     const customerName = order.customer.name.trim() || "cher client";
+    const pressingName = tenant?.name || "PressiPro";
+    const remaining = order.totalAmount - order.paidAmount;
     if (kind === "ready") {
-      return `Bonjour ${customerName}, votre commande ${order.code} est prête. Je vous envoie votre reçu en pièce jointe.`;
+      let msg = `🧺 *${pressingName}*\nBonjour *${customerName}*,\n\nExcellente nouvelle ! Vos vêtements déposés sous la commande *${order.code}* sont lavés, repassés et *PRÊTS à être récupérés* en boutique ! ✨`;
+      if (remaining > 0) {
+        msg += `\n\n💰 Reste à régler : *${formatFCFA(remaining)}*`;
+      } else {
+        msg += `\n\n✅ Commande entièrement réglée.`;
+      }
+      msg += `\n\nNous vous joignons votre reçu digital. Merci de votre confiance et à très bientôt ! 🙏`;
+      return msg;
     }
-    return `Bonjour ${customerName}, je vous envoie votre reçu en pièce jointe.`;
+    let msg = `🧺 *${pressingName}*\nBonjour *${customerName}*,\n\nVoici le reçu de votre dépôt *${order.code}* au pressing.\nMontant Total : *${formatFCFA(order.totalAmount)}*`;
+    if (remaining > 0) {
+      msg += `\n⚠️ Reste à payer : *${formatFCFA(remaining)}*`;
+    }
+    msg += `\n\nMerci de votre fidélité ! 🙏`;
+    return msg;
   };
 
   const formatDownloadTimestamp = () => {
@@ -678,38 +707,168 @@ export default function OrderDetailPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-start sm:items-center gap-2 sm:gap-3 flex-wrap">
-        <button onClick={() => router.push("/orders")} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all shrink-0">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <h1 className="text-lg sm:text-2xl font-bold font-mono text-gray-900">{order.code}</h1>
-        <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
-          <span className={`badge text-sm sm:text-base px-2.5 sm:px-3 py-0.5 sm:py-1 ${STATUS_COLORS[order.status]}`}>
-            {STATUS_LABELS[order.status]}
-          </span>
-          {paymentStatus === "PAYE" && <span className="badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">PAYÉ</span>}
-          {paymentStatus === "PARTIEL" && <span className="badge bg-amber-50 text-amber-700 ring-1 ring-amber-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">PARTIEL</span>}
-          {paymentStatus === "IMPAYE" && <span className="badge bg-red-50 text-red-700 ring-1 ring-red-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">IMPAYÉ</span>}
-          {isLate && <span className="badge bg-red-500 text-white text-xs sm:text-sm px-2.5 py-0.5 sm:py-1 shadow-sm shadow-red-500/30">EN RETARD</span>}
+      <div className="flex items-start sm:items-center justify-between gap-2 sm:gap-3 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <button onClick={() => router.push("/orders")} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all shrink-0">
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <h1 className="text-lg sm:text-2xl font-bold font-mono text-gray-900">{order.code}</h1>
+          <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
+            <span className={`badge text-sm sm:text-base px-2.5 sm:px-3 py-0.5 sm:py-1 ${STATUS_COLORS[order.status]}`}>
+              {STATUS_LABELS[order.status]}
+            </span>
+            {paymentStatus === "PAYE" && <span className="badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">PAYÉ</span>}
+            {paymentStatus === "PARTIEL" && <span className="badge bg-amber-50 text-amber-700 ring-1 ring-amber-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">PARTIEL</span>}
+            {paymentStatus === "IMPAYE" && <span className="badge bg-red-50 text-red-700 ring-1 ring-red-600/10 text-xs sm:text-sm px-2.5 py-0.5 sm:py-1">IMPAYÉ</span>}
+            {isLate && <span className="badge bg-red-500 text-white text-xs sm:text-sm px-2.5 py-0.5 sm:py-1 shadow-sm shadow-red-500/30">EN RETARD</span>}
+          </div>
         </div>
+
+        {/* Manager Edit Button */}
+        {isAdmin && order.status !== "LIVRE" && (
+          <button
+            type="button"
+            onClick={() => setShowEditModal(true)}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-primary-700 bg-primary-50 hover:bg-primary-100 border border-primary-200/70 transition-all shadow-sm active:scale-95 shrink-0"
+          >
+            <Pencil className="w-3.5 h-3.5 text-primary-600" />
+            <span>Modifier la commande</span>
+          </button>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Left column: details */}
         <div className="lg:col-span-2 space-y-4 min-w-0">
-          {/* Customer */}
-          <div className="card">
-            <div className="flex items-center gap-2 mb-3">
-              <User className="w-4 h-4 text-gray-400" />
-              <h2 className="font-semibold text-gray-900">Client</h2>
+          {/* Mobile Quick Action Card (Visible only on mobile screens < lg) */}
+          <div className="lg:hidden card bg-gradient-to-br from-primary-50/70 via-white to-white border-primary-200/80 p-4 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-primary-700 bg-primary-100/70 px-2 py-0.5 rounded-md">
+                Action Rapide
+              </span>
+              <span className="text-xs font-bold text-gray-600">{STATUS_LABELS[order.status]}</span>
             </div>
-            <p className="font-medium text-gray-900">{order.customer.name}</p>
-            <p className="text-sm text-gray-500">{order.customer.phone}</p>
+
+            {/* Primary Action Button */}
+            {nextStatus && nextAction ? (
+              <button
+                onClick={advanceStatus}
+                disabled={actionLoading}
+                className="btn-primary w-full py-3 text-sm font-bold flex items-center justify-center gap-2 shadow-md shadow-primary-600/25 active:scale-98"
+              >
+                <nextAction.icon className="h-4 w-4" />
+                <span>{nextAction.label}</span>
+              </button>
+            ) : (
+              <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-center text-xs font-semibold text-gray-600">
+                Commande au statut final ({STATUS_LABELS[order.status]})
+              </div>
+            )}
+
+            {/* Secondary Quick Buttons */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {order.status === "PRET" ? (
+                <button
+                  onClick={() => sendWhatsAppDirect("ready")}
+                  disabled={shareLoading}
+                  className="btn-success py-2.5 px-2 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Aviser client</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => sendWhatsAppDirect("receipt")}
+                  disabled={shareLoading}
+                  className="btn-success py-2.5 px-2 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Reçu WhatsApp</span>
+                </button>
+              )}
+
+              {amountDue > 0 ? (
+                <button
+                  onClick={() => {
+                    setShowPayment(true);
+                    const el = document.getElementById("payments-section");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="btn-secondary py-2.5 px-2 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200/80 flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <Banknote className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Paiement ({formatFCFA(amountDue)})</span>
+                </button>
+              ) : (
+                <a
+                  href={`/api/orders/${order.id}/receipt.pdf`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-secondary py-2.5 px-2 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs text-center"
+                >
+                  <Printer className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Imprimer reçu</span>
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* Customer */}
+          <div className="card hover:border-primary-200 transition-colors">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-primary-600" />
+                <h2 className="font-semibold text-gray-900">Client</h2>
+              </div>
+              <Link
+                href={`/customers/${order.customer.id}`}
+                className="text-xs font-bold text-primary-600 hover:text-primary-700 hover:underline flex items-center gap-1"
+                title="Consulter l'historique complet et la traçabilité de ce client"
+              >
+                <span>Fiche & Historique complet</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <Link
+                  href={`/customers/${order.customer.id}`}
+                  className="font-bold text-gray-900 text-base hover:text-primary-600 hover:underline block"
+                >
+                  {order.customer.name}
+                </Link>
+                <p className="text-xs font-mono text-gray-500 mt-0.5">{order.customer.phone}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const cleanPhone = normalizePhoneForWhatsApp(order.customer.phone) || order.customer.phone.replace(/[^0-9]/g, "");
+                  window.open(`https://wa.me/${cleanPhone}`, "_blank");
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold border border-emerald-200/60 shadow-2xs transition-colors"
+                title="Discuter directement sur WhatsApp"
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                <span>WhatsApp</span>
+              </button>
+            </div>
           </div>
 
           {/* Items */}
           <div className="card">
-            <h2 className="font-semibold mb-3">Articles</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-900">Articles</h2>
+              {isAdmin && order.status !== "LIVRE" && (
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(true)}
+                  className="text-xs text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-1 hover:underline"
+                >
+                  <Pencil className="w-3 h-3" />
+                  <span>Corriger articles</span>
+                </button>
+              )}
+            </div>
             <div className="overflow-x-auto -mx-4 sm:-mx-6">
               <table className="min-w-[400px] w-full text-sm">
                 <thead>
@@ -755,7 +914,7 @@ export default function OrderDetailPage() {
           </div>
 
           {/* Payments history */}
-          <div className="card">
+          <div id="payments-section" className="card scroll-mt-20">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Banknote className="w-4 h-4 text-gray-400" />
@@ -1071,6 +1230,18 @@ export default function OrderDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Edit Order Modal */}
+      {showEditModal && (
+        <EditOrderModal
+          order={order}
+          onClose={() => setShowEditModal(false)}
+          onSuccess={async () => {
+            await fetchOrder();
+            setSyncMessage("Commande mise à jour avec succès.");
+          }}
+        />
+      )}
     </div>
   );
 }

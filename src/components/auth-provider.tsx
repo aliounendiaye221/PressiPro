@@ -17,6 +17,8 @@ interface Tenant {
   phone?: string;
   address?: string;
   logoUrl?: string | null;
+  waveNumber?: string | null;
+  omNumber?: string | null;
 }
 
 interface AuthContextType {

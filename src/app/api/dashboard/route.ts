@@ -10,8 +10,9 @@ export async function GET() {
 
     // Date ranges
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayOfWeek = (now.getDay() + 6) % 7; // Monday = 0, Sunday = 6
     const startOfWeek = new Date(startOfDay);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1); // Monday
+    startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     // Execute ALL queries in parallel for maximum performance
@@ -22,6 +23,8 @@ export async function GET() {
       revenueDay,
       revenueWeek,
       revenueMonth,
+      expensesMonth,
+      totalExpensesCount,
       unpaidOrders,
       lateOrders,
       ordersByStatus,
@@ -42,6 +45,18 @@ export async function GET() {
       prisma.payment.aggregate({
         where: { tenantId, createdAt: { gte: startOfMonth } },
         _sum: { amount: true },
+      }),
+
+      // Current month expenses (synchronisation directe)
+      prisma.expense.aggregate({
+        where: { tenantId, date: { gte: startOfMonth } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+
+      // Has any expense in tenant history
+      prisma.expense.count({
+        where: { tenantId },
       }),
 
       // Unpaid totals
@@ -139,12 +154,26 @@ export async function GET() {
     });
     const userMap = new Map<string, string>(users.map((u: any) => [u.id, u.name]));
 
+    const monthRevenue = revenueMonth._sum.amount || 0;
+    const monthExpenses = expensesMonth._sum.amount || 0;
+    const netProfit = monthRevenue - monthExpenses;
+    const margin = monthRevenue > 0 ? Math.round((netProfit / monthRevenue) * 100) : 0;
+
     return successResponse({
       revenue: {
         day: revenueDay._sum.amount || 0,
         week: revenueWeek._sum.amount || 0,
-        month: revenueMonth._sum.amount || 0,
+        month: monthRevenue,
       },
+      monthlyFinancials: {
+        revenue: monthRevenue,
+        expenses: monthExpenses,
+        netProfit,
+        margin,
+        isProfit: netProfit >= 0,
+        expenseCount: expensesMonth._count || 0,
+      },
+      hasExpenses: totalExpensesCount > 0,
       totalUnpaid,
       lateOrders,
       ordersByStatus: Object.fromEntries(

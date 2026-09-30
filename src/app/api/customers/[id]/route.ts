@@ -13,29 +13,95 @@ export async function GET(
     const session = await requireTenantSession();
     const { id } = await params;
 
-    const customer = await prisma.customer.findFirst({
-      where: { id, tenantId: session.tenantId },
-      include: {
-        orders: {
-          orderBy: { createdAt: "desc" },
-          take: 10,
-          select: {
-            id: true,
-            code: true,
-            status: true,
-            totalAmount: true,
-            paidAmount: true,
-            createdAt: true,
+    const [customer, users] = await Promise.all([
+      prisma.customer.findFirst({
+        where: { id, tenantId: session.tenantId },
+        include: {
+          orders: {
+            orderBy: { createdAt: "desc" },
+            select: {
+              id: true,
+              code: true,
+              status: true,
+              totalAmount: true,
+              paidAmount: true,
+              discountAmount: true,
+              discountReason: true,
+              notes: true,
+              promisedAt: true,
+              createdAt: true,
+              items: {
+                select: {
+                  id: true,
+                  name: true,
+                  quantity: true,
+                  unitPrice: true,
+                  total: true,
+                  pricingType: true,
+                  weight: true,
+                },
+              },
+              payments: {
+                orderBy: { createdAt: "desc" },
+                select: {
+                  id: true,
+                  amount: true,
+                  method: true,
+                  note: true,
+                  createdAt: true,
+                  createdBy: true,
+                },
+              },
+            },
           },
         },
-      },
-    });
+      }),
+      prisma.user.findMany({
+        where: { tenantId: session.tenantId },
+        select: { id: true, name: true },
+      }),
+    ]);
 
     if (!customer) {
       return errorResponse("Client introuvable", 404);
     }
 
-    return successResponse(customer);
+    const userMap = new Map<string, string>(users.map((u) => [u.id, u.name]));
+
+    // Aggregate statistics
+    const totalOrders = customer.orders.length;
+    const totalSpent = customer.orders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const totalPaid = customer.orders.reduce((sum, o) => sum + o.paidAmount, 0);
+    const totalDebt = Math.max(0, totalSpent - totalPaid);
+    const activeOrdersCount = customer.orders.filter((o) => o.status !== "LIVRE").length;
+
+    // Collect and sort all payments across all orders
+    const allPayments = customer.orders
+      .flatMap((order) =>
+        order.payments.map((p) => ({
+          id: p.id,
+          amount: p.amount,
+          method: p.method,
+          note: p.note,
+          createdAt: p.createdAt,
+          agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Comptoir",
+          orderId: order.id,
+          orderCode: order.code,
+        }))
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return successResponse({
+      ...customer,
+      stats: {
+        totalOrders,
+        totalSpent,
+        totalPaid,
+        totalDebt,
+        activeOrdersCount,
+      },
+      allPayments,
+    });
   } catch (error) {
     return handleApiError(error);
   }

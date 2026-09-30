@@ -30,6 +30,7 @@ model Tenant {
   services  Service[]
   payments  Payment[]
   auditLogs AuditLog[]
+  expenses  Expense[]
 }
 
 // ─── USER ──────────────────────────────────────────────────
@@ -220,4 +221,35 @@ model AuditLog {
   @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([entityId])
+}
+
+// ─── EXPENSE ───────────────────────────────────────────────
+enum ExpenseCategory {
+  PRODUITS      // Lessive, cintres, plastique, détachant
+  LIVRAISON     // Carburant, transport, livreur
+  MATERIEL      // Réparation machines, fers, pièces
+  CHARGES_FIXES // Loyer, Senelec, Sde/Eau, Internet
+  SALAIRES      // Salaires, avances, journaliers
+  AUTRE         // Dépenses diverses
+}
+
+model Expense {
+  id            String          @id @default(cuid())
+  tenantId      String
+  tenant        Tenant          @relation(fields: [tenantId], references: [id])
+  category      ExpenseCategory @default(AUTRE)
+  description   String          // Ex: "Achat 3 bidons lessive OMO 5L"
+  amount        Int             // Montant en FCFA
+  date          DateTime        @default(now())
+  paymentMethod PaymentMethod   @default(CASH) // CASH, WAVE, OM, OTHER
+  supplier      String?         // Nom du fournisseur / magasin
+  receiptUrl    String?         // Photo du reçu ou facture (optionnel)
+  notes         String?
+  createdBy     String?         // userId de l'auteur
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, date])
+  @@index([tenantId, category])
 }

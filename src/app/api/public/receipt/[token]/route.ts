@@ -8,12 +8,36 @@ import { formatDate, getPaymentStatus } from "@/lib/receipt/mapper";
 import { generateQRDataURL } from "@/lib/receipt/qr";
 import { handleApiError, errorResponse, successResponse } from "@/lib/api-utils";
 import { auditLog } from "@/lib/audit";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
+
+const MAX_PUBLIC_RECEIPT_REQUESTS_PER_IP = 30;
+const PUBLIC_RECEIPT_WINDOW_MS = 60 * 1000; // 1 minute
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
   try {
+    const clientIp = getClientIp(request);
+    const ipLimit = await checkRateLimit(
+      `public:receipt:ip:${clientIp}`,
+      MAX_PUBLIC_RECEIPT_REQUESTS_PER_IP,
+      PUBLIC_RECEIPT_WINDOW_MS
+    );
+
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: "Trop de requêtes. Veuillez patienter un instant." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(ipLimit.retryAfterSeconds),
+          },
+        }
+      );
+    }
+
     const { token } = await params;
     const payload = await verifyReceiptShareToken(token);
 
@@ -119,7 +143,7 @@ export async function GET(
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `${isDownload ? "attachment" : "inline"}; filename="recu-${order.code}.pdf"`,
-        "Cache-Control": "no-store",
+        "Cache-Control": "public, max-age=300, stale-while-revalidate=86400",
       },
     });
   } catch (error) {

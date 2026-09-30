@@ -42,7 +42,20 @@ export async function POST(request: NextRequest) {
       return errorResponse("Cet email est déjà utilisé", 409);
     }
 
-    // Create tenant + admin user in a transaction
+const DEFAULT_SERVICES = [
+  { name: "Chemise", price: 500, category: "Repassage", isQuickItem: true, sortOrder: 1 },
+  { name: "Pantalon", price: 500, category: "Repassage", isQuickItem: true, sortOrder: 2 },
+  { name: "Costume complet", price: 2000, category: "Lavage", isQuickItem: true, sortOrder: 3 },
+  { name: "Robe simple", price: 1000, category: "Lavage", isQuickItem: true, sortOrder: 4 },
+  { name: "Robe brodée", price: 2500, category: "Lavage", isQuickItem: true, sortOrder: 5 },
+  { name: "Boubou homme", price: 1500, category: "Lavage", isQuickItem: true, sortOrder: 6 },
+  { name: "Boubou femme", price: 2000, category: "Lavage", isQuickItem: true, sortOrder: 7 },
+  { name: "Drap", price: 1000, category: "Lavage", isQuickItem: true, sortOrder: 8 },
+  { name: "Couverture", price: 2000, category: "Lavage", isQuickItem: false, sortOrder: 9 },
+  { name: "Lavage au kilo", price: 1500, category: "Lavage", pricingType: "PER_KG" as const, isQuickItem: true, sortOrder: 10 },
+];
+
+    // Create tenant + admin user + default services in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const p = tx as typeof prisma;
       const tenant = await p.tenant.create({
@@ -62,6 +75,19 @@ export async function POST(request: NextRequest) {
           name: data.name,
           role: "ADMIN",
         },
+      });
+
+      await p.service.createMany({
+        data: DEFAULT_SERVICES.map((s) => ({
+          tenantId: tenant.id,
+          name: s.name,
+          price: s.price,
+          category: s.category,
+          pricingType: s.pricingType || "PER_ITEM",
+          isQuickItem: s.isQuickItem,
+          sortOrder: s.sortOrder,
+          active: true,
+        })),
       });
 
       return { tenant, user };

@@ -143,6 +143,7 @@ model Order {
   @@index([tenantId, code])
   @@index([tenantId, status])
   @@index([tenantId, status, promisedAt])
+  @@index([tenantId, deletedAt])
   @@index([customerId])
 }
 
@@ -200,6 +201,7 @@ model Payment {
   @@index([tenantId])
   @@index([orderId])
   @@index([tenantId, createdAt])
+  @@index([tenantId, method])
 }
 
 // ─── AUDIT LOG ─────────────────────────────────────────────

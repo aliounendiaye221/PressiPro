@@ -97,12 +97,8 @@ export async function POST(request: NextRequest) {
     let retries = 3;
     while (retries > 0) {
       try {
-        // generateOrderCode utilise prisma.$queryRaw (sur le client principal, pas tx)
-        // avec FOR UPDATE pour verrouiller les lignes existantes du tenant.
-        // La génération + création sont liées par la contrainte unique + le retry.
-        const code = await generateOrderCode(session.tenantId);
-
         order = await prisma.$transaction(async (tx) => {
+          const code = await generateOrderCode(session.tenantId, tx);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const newOrder = await (tx as any).order.create({
             data: {

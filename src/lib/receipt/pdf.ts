@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { formatDate, getPaymentStatus, type ReceiptData } from "./mapper";
 import { ReceiptPDF } from "./template";
 import { generateQRDataURL } from "./qr";
+import { createReceiptShareToken } from "@/lib/receipt-share";
 
 const RECEIPT_CACHE_TTL_MS = 10 * 60 * 1000;
 const RECEIPT_CACHE_MAX_ENTRIES = 40;
@@ -100,8 +101,20 @@ function buildFingerprint(order: OrderForReceipt, isDuplicate: boolean): string 
 
 async function buildReceiptData(order: OrderForReceipt, isDuplicate: boolean): Promise<ReceiptData> {
   const amountDue = order.totalAmount - order.paidAmount;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const qrText = `${appUrl}/orders/${order.id}`;
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
+  let qrText = `${appUrl}/orders/${order.id}`;
+
+  try {
+    const shareToken = await createReceiptShareToken({
+      orderId: order.id,
+      tenantId: order.tenantId,
+      duplicate: isDuplicate,
+    });
+    qrText = `${appUrl}/share/receipt/${shareToken}`;
+  } catch (err) {
+    console.warn("[Receipt] Failed to create share token for QR, fallback to order path", err);
+  }
+
   const qrDataUrl = await generateQRDataURL(qrText);
 
   return {

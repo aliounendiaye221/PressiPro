@@ -9,9 +9,18 @@ import { prisma } from "./db";
  * The unique constraint @@unique([tenantId, code]) acts as a safety net,
  * but this approach prevents conflicts at the source.
  */
-export async function generateOrderCode(tenantId: string): Promise<string> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function generateOrderCode(tenantId: string, client?: any): Promise<string> {
+  const db = client || prisma;
   try {
-    const rows = await prisma.$queryRaw<Array<{ nextNum: number | string | bigint }>>`
+    // Acquire a transaction-level advisory lock per tenant to serialize code generation under concurrency
+    try {
+      await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
+    } catch {
+      // Ignore if advisory locks are unsupported in current test/mock runtime
+    }
+
+    const rows = await db.$queryRaw<Array<{ nextNum: number | string | bigint }>>`
       SELECT COALESCE(
         MAX(
           CASE
@@ -32,7 +41,7 @@ export async function generateOrderCode(tenantId: string): Promise<string> {
     return `P-${String(validNum).padStart(5, "0")}`;
   } catch (error) {
     console.error("[generateOrderCode] Raw query failed, falling back to prisma findFirst:", error);
-    const lastOrder = await prisma.order.findFirst({
+    const lastOrder = await db.order.findFirst({
       where: {
         tenantId,
         code: { startsWith: "P-" },

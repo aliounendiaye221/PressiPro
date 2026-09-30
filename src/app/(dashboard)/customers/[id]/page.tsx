@@ -460,7 +460,7 @@ export default function CustomerDetailPage() {
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-gray-900 font-mono">
+          <p className="text-xl sm:text-2xl font-black text-gray-900">
             {formatFCFA(stats.totalSpent)}
           </p>
           <p className="text-[11px] text-gray-500 mt-1">
@@ -478,7 +478,7 @@ export default function CustomerDetailPage() {
               <Banknote className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-emerald-600 font-mono">
+          <p className="text-xl sm:text-2xl font-black text-emerald-600">
             {formatFCFA(stats.totalPaid)}
           </p>
           <p className="text-[11px] text-gray-500 mt-1">
@@ -511,7 +511,7 @@ export default function CustomerDetailPage() {
             </div>
           </div>
           <p
-            className={`text-xl sm:text-2xl font-black font-mono ${
+            className={`text-xl sm:text-2xl font-black ${
               stats.totalDebt > 0 ? "text-red-600" : "text-emerald-600"
             }`}
           >
@@ -532,7 +532,7 @@ export default function CustomerDetailPage() {
               <Package className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-gray-900 font-mono">
+          <p className="text-xl sm:text-2xl font-black text-gray-900">
             {stats.totalOrders}
           </p>
           <p className="text-[11px] text-gray-500 mt-1">
@@ -732,7 +732,7 @@ export default function CustomerDetailPage() {
                         {/* Financial badges */}
                         <div className="flex items-center gap-3 self-end sm:self-auto text-right">
                           <div>
-                            <p className="text-base sm:text-lg font-black text-gray-900 font-mono">
+                            <p className="text-base sm:text-lg font-black text-gray-900">
                               {formatFCFA(order.totalAmount)}
                             </p>
                             {isUnpaid ? (
@@ -829,7 +829,7 @@ export default function CustomerDetailPage() {
                             <span>{p.orderCode}</span>
                             <ExternalLink className="w-3 h-3 text-gray-400" />
                           </Link>
-                          <span className="font-mono font-black text-emerald-600 text-sm">
+                          <span className="font-black text-emerald-600 text-sm">
                             +{formatFCFA(p.amount)}
                           </span>
                         </div>
@@ -841,7 +841,7 @@ export default function CustomerDetailPage() {
                             Agent : <strong className="text-gray-700">{p.agentName}</strong>
                           </span>
                         </div>
-                        <p className="text-[10px] font-mono text-gray-400 pt-0.5">
+                        <p className="text-[10px] text-gray-400 pt-0.5">
                           {new Date(p.createdAt).toLocaleString("fr-SN")}
                         </p>
                       </div>
@@ -866,7 +866,7 @@ export default function CustomerDetailPage() {
                         const badge = METHOD_BADGES[p.method] || METHOD_BADGES.OTHER;
                         return (
                           <tr key={p.id} className="hover:bg-gray-50/60 transition-colors">
-                            <td className="py-3 px-4 font-mono text-xs text-gray-500 whitespace-nowrap">
+                            <td className="py-3 px-4 text-xs text-gray-500 whitespace-nowrap">
                               {new Date(p.createdAt).toLocaleString("fr-SN", {
                                 day: "2-digit",
                                 month: "2-digit",
@@ -898,7 +898,7 @@ export default function CustomerDetailPage() {
                               </span>
                             </td>
 
-                            <td className="py-3 px-4 text-right font-black text-emerald-600 font-mono whitespace-nowrap">
+                            <td className="py-3 px-4 text-right font-black text-emerald-600 whitespace-nowrap">
                               +{formatFCFA(p.amount)}
                             </td>
                           </tr>

@@ -184,7 +184,7 @@ function CaisseContent() {
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-emerald-600 font-mono">
+          <p className="text-xl sm:text-2xl font-black text-emerald-600">
             {formatFCFA(data?.totalAmount || 0)}
           </p>
           <p className="text-[11px] text-gray-500 mt-1">
@@ -202,7 +202,7 @@ function CaisseContent() {
               <Banknote className="w-4 h-4 text-emerald-600" />
             </div>
           </div>
-          <p className="text-lg sm:text-xl font-bold text-gray-900 font-mono">
+          <p className="text-lg sm:text-xl font-bold text-gray-900">
             {formatFCFA(data?.summaryByMethod.CASH || 0)}
           </p>
           <p className="text-[11px] text-gray-400 mt-1">Direct comptoir</p>
@@ -218,7 +218,7 @@ function CaisseContent() {
               <CreditCard className="w-4 h-4 text-blue-600" />
             </div>
           </div>
-          <p className="text-lg sm:text-xl font-bold text-gray-900 font-mono">
+          <p className="text-lg sm:text-xl font-bold text-gray-900">
             {formatFCFA(data?.summaryByMethod.WAVE || 0)}
           </p>
           <p className="text-[11px] text-gray-400 mt-1">Mobile Money</p>
@@ -234,7 +234,7 @@ function CaisseContent() {
               <Smartphone className="w-4 h-4 text-orange-600" />
             </div>
           </div>
-          <p className="text-lg sm:text-xl font-bold text-gray-900 font-mono">
+          <p className="text-lg sm:text-xl font-bold text-gray-900">
             {formatFCFA(data?.summaryByMethod.OM || 0)}
           </p>
           <p className="text-[11px] text-gray-400 mt-1">Mobile Money</p>
@@ -367,7 +367,7 @@ function CaisseContent() {
                       <span>{p.orderCode}</span>
                       <ExternalLink className="w-3 h-3 text-gray-400" />
                     </Link>
-                    <span className="font-mono font-black text-emerald-600 text-sm">
+                    <span className="font-black text-emerald-600 text-sm">
                       +{formatFCFA(p.amount)}
                     </span>
                   </div>
@@ -391,7 +391,7 @@ function CaisseContent() {
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-50">
-                    <span className="font-mono">
+                    <span>
                       {new Date(p.createdAt).toLocaleString("fr-SN", {
                         day: "2-digit",
                         month: "2-digit",
@@ -424,7 +424,7 @@ function CaisseContent() {
                   const badge = METHOD_BADGES[p.method] || METHOD_BADGES.OTHER;
                   return (
                     <tr key={p.id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="py-3 px-4 font-mono text-xs text-gray-500 whitespace-nowrap">
+                      <td className="py-3 px-4 text-xs text-gray-500 whitespace-nowrap">
                         {new Date(p.createdAt).toLocaleString("fr-SN", {
                           day: "2-digit",
                           month: "2-digit",
@@ -459,7 +459,7 @@ function CaisseContent() {
                           <span>{p.customerName}</span>
                         )}
                         {p.customerPhone && (
-                          <span className="text-xs text-gray-400 block font-normal font-mono">{p.customerPhone}</span>
+                          <span className="text-xs text-gray-400 block font-normal">{p.customerPhone}</span>
                         )}
                       </td>
 
@@ -475,7 +475,7 @@ function CaisseContent() {
                         </span>
                       </td>
 
-                      <td className="py-3 px-4 text-right font-mono font-black text-emerald-600 whitespace-nowrap text-base">
+                      <td className="py-3 px-4 text-right font-black text-emerald-600 whitespace-nowrap text-base">
                         +{formatFCFA(p.amount)}
                       </td>
                     </tr>

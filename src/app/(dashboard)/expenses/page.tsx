@@ -647,7 +647,7 @@ export default function ExpensesPage() {
                         {e.notes && <p className="text-xs text-gray-400 mt-0.5">{e.notes}</p>}
                       </div>
                       <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
-                        <span className="font-mono text-[11px]">
+                        <span className="text-[11px]">
                           {new Date(e.date).toLocaleDateString("fr-SN")} · {PAYMENT_LABELS[e.paymentMethod] || e.paymentMethod}
                           {e.supplier ? ` · ${e.supplier}` : ""}
                         </span>

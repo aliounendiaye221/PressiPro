@@ -13,12 +13,17 @@ const updateTenantSchema = z.object({
   logoUrl: z.string().url().max(500).optional().or(z.literal("")),
   brandPrimaryColor: z.string().regex(/^#(?:[0-9a-fA-F]{6})$/).optional().or(z.literal("")),
   brandAccentColor: z.string().regex(/^#(?:[0-9a-fA-F]{6})$/).optional().or(z.literal("")),
+  cinetpaySiteId: z.string().max(100).optional().or(z.literal("")),
+  cinetpayApiKey: z.string().max(200).optional().or(z.literal("")),
+  cinetpaySecretKey: z.string().max(200).optional().or(z.literal("")),
+  cinetpayEnabled: z.boolean().optional(),
 });
 
 export async function GET() {
   try {
     const session = await requireAdmin();
-    const tenant = await prisma.tenant.findUnique({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tenant = await (prisma.tenant as any).findUnique({
       where: { id: session.tenantId },
       select: {
         id: true,
@@ -30,6 +35,10 @@ export async function GET() {
         logoUrl: true,
         brandPrimaryColor: true,
         brandAccentColor: true,
+        cinetpaySiteId: true,
+        cinetpayApiKey: true,
+        cinetpaySecretKey: true,
+        cinetpayEnabled: true,
       },
     });
     return successResponse(tenant);
@@ -44,7 +53,8 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const data = updateTenantSchema.parse(body);
 
-    const tenant = await prisma.tenant.update({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tenant = await (prisma.tenant as any).update({
       where: { id: session.tenantId },
       data: {
         ...(data.name !== undefined && { name: data.name }),
@@ -55,6 +65,10 @@ export async function PUT(request: NextRequest) {
         logoUrl: data.logoUrl || null,
         brandPrimaryColor: data.brandPrimaryColor || null,
         brandAccentColor: data.brandAccentColor || null,
+        cinetpaySiteId: data.cinetpaySiteId !== undefined ? (data.cinetpaySiteId || null) : undefined,
+        cinetpayApiKey: data.cinetpayApiKey !== undefined ? (data.cinetpayApiKey || null) : undefined,
+        cinetpaySecretKey: data.cinetpaySecretKey !== undefined ? (data.cinetpaySecretKey || null) : undefined,
+        cinetpayEnabled: data.cinetpayEnabled !== undefined ? data.cinetpayEnabled : undefined,
       },
       select: {
         id: true,
@@ -66,6 +80,10 @@ export async function PUT(request: NextRequest) {
         logoUrl: true,
         brandPrimaryColor: true,
         brandAccentColor: true,
+        cinetpaySiteId: true,
+        cinetpayApiKey: true,
+        cinetpaySecretKey: true,
+        cinetpayEnabled: true,
       },
     });
 

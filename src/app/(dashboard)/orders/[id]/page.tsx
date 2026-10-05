@@ -34,6 +34,11 @@ import {
   Truck,
   Inbox,
   TerminalSquare,
+  CreditCard,
+  Copy,
+  Check,
+  ExternalLink,
+  Share2,
 } from "lucide-react";
 import { printDirectlyPOS } from "@/lib/receipt/escpos";
 import { normalizePhoneForWhatsApp } from "@/lib/phone";
@@ -133,6 +138,80 @@ export default function OrderDetailPage() {
   const [syncMessage, setSyncMessage] = useState("");
   const [showWhatsAppGuide, setShowWhatsAppGuide] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+
+  // CinetPay modal state
+  const [cinetpayModal, setCinetpayModal] = useState<{
+    open: boolean;
+    loading: boolean;
+    paymentLink: string;
+    directPaymentUrl: string | null;
+    whatsappMessage: string;
+    copied: boolean;
+    error: string;
+  }>({
+    open: false,
+    loading: false,
+    paymentLink: "",
+    directPaymentUrl: null,
+    whatsappMessage: "",
+    copied: false,
+    error: "",
+  });
+
+  const generateCinetPayLink = async () => {
+    if (!order) return;
+    setCinetpayModal({
+      open: true,
+      loading: true,
+      paymentLink: "",
+      directPaymentUrl: null,
+      whatsappMessage: "",
+      copied: false,
+      error: "",
+    });
+
+    try {
+      const res = await fetch(`/api/orders/${order.id}/cinetpay/initiate`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Erreur lors de la génération du lien CinetPay");
+      }
+      setCinetpayModal({
+        open: true,
+        loading: false,
+        paymentLink: data.paymentLink || data.receiptShareUrl,
+        directPaymentUrl: data.directPaymentUrl || null,
+        whatsappMessage: data.whatsappMessage || "",
+        copied: false,
+        error: "",
+      });
+    } catch (e) {
+      setCinetpayModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: e instanceof Error ? e.message : "Erreur de connexion",
+      }));
+    }
+  };
+
+  const copyCinetPayLink = () => {
+    if (!cinetpayModal.paymentLink) return;
+    navigator.clipboard.writeText(cinetpayModal.paymentLink);
+    setCinetpayModal((prev) => ({ ...prev, copied: true }));
+    setTimeout(() => {
+      setCinetpayModal((prev) => ({ ...prev, copied: false }));
+    }, 2500);
+  };
+
+  const sendCinetPayWhatsApp = () => {
+    if (!order) return;
+    const phone = normalizePhoneForWhatsApp(order.customer.phone);
+    const msg = encodeURIComponent(cinetpayModal.whatsappMessage);
+    const url = phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+    window.open(url, "_blank");
+  };
 
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
@@ -921,9 +1000,19 @@ export default function OrderDetailPage() {
                 <h2 className="font-semibold text-gray-900">Paiements</h2>
               </div>
               {amountDue > 0 && (
-                <button className="btn-primary text-xs" onClick={() => setShowPayment(true)}>
-                  <Plus className="w-3 h-3" /> Paiement
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    className="btn-secondary text-xs border-sky-300 text-sky-700 bg-sky-50 hover:bg-sky-100 flex items-center gap-1.5 shadow-sm"
+                    onClick={generateCinetPayLink}
+                    title="Générer un lien de paiement CinetPay (Wave, OM, CB)"
+                  >
+                    <CreditCard className="w-3.5 h-3.5 text-sky-600" />
+                    Lien CinetPay
+                  </button>
+                  <button className="btn-primary text-xs" onClick={() => setShowPayment(true)}>
+                    <Plus className="w-3 h-3" /> Paiement
+                  </button>
+                </div>
               )}
             </div>
 
@@ -1241,6 +1330,102 @@ export default function OrderDetailPage() {
             setSyncMessage("Commande mise à jour avec succès.");
           }}
         />
+      )}
+
+      {/* CinetPay Link Modal */}
+      {cinetpayModal.open && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center ring-1 ring-sky-200">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm">Lien de paiement CinetPay</h3>
+                  <p className="text-xs text-gray-500">Commande {order.code} • Reste : {formatFCFA(amountDue)}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCinetpayModal((prev) => ({ ...prev, open: false }))}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {cinetpayModal.loading ? (
+              <div className="py-8 text-center space-y-2">
+                <div className="w-8 h-8 border-3 border-sky-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs text-gray-500">Génération du lien de paiement sécurisé...</p>
+              </div>
+            ) : cinetpayModal.error ? (
+              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 space-y-2">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                  Impossible d'initier CinetPay
+                </p>
+                <p>{cinetpayModal.error}</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Lien de paiement client</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={cinetpayModal.paymentLink}
+                      className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-2 flex-1 font-mono text-slate-800 select-all"
+                    />
+                    <button
+                      onClick={copyCinetPayLink}
+                      className="p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1 transition-all"
+                      title="Copier le lien"
+                    >
+                      {cinetpayModal.copied ? (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-600" />
+                          <span className="text-emerald-600">Copié</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          <span>Copier</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <button
+                    onClick={sendCinetPayWhatsApp}
+                    className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Envoyer le lien par WhatsApp ({order.customer.name})
+                  </button>
+
+                  {cinetpayModal.directPaymentUrl && (
+                    <a
+                      href={cinetpayModal.directPaymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl border border-sky-300 bg-sky-50 hover:bg-sky-100 text-sky-800 font-semibold text-xs transition-all"
+                    >
+                      <ExternalLink className="w-4 h-4 text-sky-600" />
+                      Ouvrir le guichet CinetPay direct
+                    </a>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-center text-gray-400">
+                  Le client pourra choisir entre Wave, Orange Money, Free Money ou Carte bancaire.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

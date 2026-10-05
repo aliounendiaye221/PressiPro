@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck, Lock, KeyRound, Eye, EyeOff, Copy, Check, MessageSquare, AlertCircle, ShieldCheck } from "lucide-react";
+import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck, Lock, KeyRound, Eye, EyeOff, Copy, Check, MessageSquare, AlertCircle, ShieldCheck, CreditCard } from "lucide-react";
 import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
 
@@ -34,6 +34,10 @@ interface TenantInfo {
   logoUrl: string | null;
   brandPrimaryColor: string | null;
   brandAccentColor: string | null;
+  cinetpaySiteId?: string | null;
+  cinetpayApiKey?: string | null;
+  cinetpaySecretKey?: string | null;
+  cinetpayEnabled?: boolean;
 }
 
 const TENANT_CACHE_KEY = "settings:tenant";
@@ -83,6 +87,10 @@ export default function SettingsPage() {
     logoUrl: "",
     brandPrimaryColor: "#0f766e",
     brandAccentColor: "#ecfeff",
+    cinetpaySiteId: "",
+    cinetpayApiKey: "",
+    cinetpaySecretKey: "",
+    cinetpayEnabled: false,
   });
   const [tenantSaving, setTenantSaving] = useState(false);
   const [tenantSuccess, setTenantSuccess] = useState(false);
@@ -164,6 +172,10 @@ export default function SettingsPage() {
           logoUrl: data.logoUrl || "",
           brandPrimaryColor: data.brandPrimaryColor || "#0f766e",
           brandAccentColor: data.brandAccentColor || "#ecfeff",
+          cinetpaySiteId: data.cinetpaySiteId || "",
+          cinetpayApiKey: data.cinetpayApiKey || "",
+          cinetpaySecretKey: data.cinetpaySecretKey || "",
+          cinetpayEnabled: data.cinetpayEnabled || false,
         });
         writeOfflineCache(TENANT_CACHE_KEY, data);
       }
@@ -181,6 +193,10 @@ export default function SettingsPage() {
           logoUrl: data.logoUrl || "",
           brandPrimaryColor: data.brandPrimaryColor || "#0f766e",
           brandAccentColor: data.brandAccentColor || "#ecfeff",
+          cinetpaySiteId: data.cinetpaySiteId || "",
+          cinetpayApiKey: data.cinetpayApiKey || "",
+          cinetpaySecretKey: data.cinetpaySecretKey || "",
+          cinetpayEnabled: data.cinetpayEnabled || false,
         });
       }
     }
@@ -259,6 +275,10 @@ export default function SettingsPage() {
           logoUrl: tenantForm.logoUrl || null,
           brandPrimaryColor: tenantForm.brandPrimaryColor || null,
           brandAccentColor: tenantForm.brandAccentColor || null,
+          cinetpaySiteId: tenantForm.cinetpaySiteId || null,
+          cinetpayApiKey: tenantForm.cinetpayApiKey || null,
+          cinetpaySecretKey: tenantForm.cinetpaySecretKey || null,
+          cinetpayEnabled: tenantForm.cinetpayEnabled,
         }
       : null;
 
@@ -690,6 +710,56 @@ export default function SettingsPage() {
                         placeholder="77 000 00 00"
                       />
                     </div>
+                  </div>
+                </div>
+
+                <div className="border-t pt-4">
+                  <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50/60 to-white p-4 space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-sky-600 text-white flex items-center justify-center shadow-sm">
+                          <CreditCard className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-sm text-gray-900">Paiement en ligne CinetPay</h3>
+                          <p className="text-xs text-gray-500">Permettre aux clients de payer leurs commandes par Wave, OM et CB</p>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={tenantForm.cinetpayEnabled}
+                          onChange={(e) => setTenantForm({ ...tenantForm, cinetpayEnabled: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block font-medium text-gray-700 mb-1">CinetPay Site ID</label>
+                        <input
+                          className="input-field text-xs"
+                          value={tenantForm.cinetpaySiteId}
+                          onChange={(e) => setTenantForm({ ...tenantForm, cinetpaySiteId: e.target.value })}
+                          placeholder="Ex: 123456"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium text-gray-700 mb-1">CinetPay Clé API (API Key)</label>
+                        <input
+                          className="input-field text-xs font-mono"
+                          value={tenantForm.cinetpayApiKey}
+                          onChange={(e) => setTenantForm({ ...tenantForm, cinetpayApiKey: e.target.value })}
+                          placeholder="sk_test_... ou Clé API CinetPay"
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-gray-500">
+                      💡 Si ces champs sont laissés vides, la clé globale de la plateforme configurée sur le serveur sera utilisée par défaut.
+                    </p>
                   </div>
                 </div>
               </div>

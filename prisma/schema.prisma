@@ -18,6 +18,10 @@ model Tenant {
   brandAccentColor  String?
   waveNumber   String?  // Numéro Wave pour paiement
   omNumber     String?  // Numéro Orange Money pour paiement
+  cinetpaySiteId    String?  // CinetPay Site ID
+  cinetpayApiKey    String?  // CinetPay API Key
+  cinetpaySecretKey String?  // CinetPay Secret Key
+  cinetpayEnabled   Boolean  @default(false)
   active       Boolean  @default(true)
   subscription String   @default("FREE") // FREE, BASIC, PRO, ENTERPRISE
   subscribedAt DateTime?

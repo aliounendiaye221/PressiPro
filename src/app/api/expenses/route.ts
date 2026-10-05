@@ -9,7 +9,7 @@ import { auditLog } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireTenantSession();
+    const session = await requireAdmin();
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("q") || "";
     const category = searchParams.get("category") || "";
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireTenantSession();
+    const session = await requireAdmin();
     const body = await request.json();
     const data = createExpenseSchema.parse(body);
 

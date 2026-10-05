@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 
+import { hashPassword } from "@/lib/auth";
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -29,7 +31,13 @@ export async function PUT(
       return errorResponse("Impossible de modifier un Super Admin", 403);
     }
 
-    const updateData: { active?: boolean; role?: "ADMIN" | "AGENT" } = {};
+    const updateData: {
+      active?: boolean;
+      role?: "ADMIN" | "AGENT";
+      password?: string;
+      failedLoginAttempts?: number;
+      lockedUntil?: Date | null;
+    } = {};
 
     if (typeof body.active === "boolean") {
       updateData.active = body.active;
@@ -37,6 +45,16 @@ export async function PUT(
 
     if (body.role === "ADMIN" || body.role === "AGENT") {
       updateData.role = body.role;
+    }
+
+    if (body.password !== undefined) {
+      if (typeof body.password !== "string" || body.password.length < 6) {
+        return errorResponse("Le mot de passe doit comporter au moins 6 caractères", 400);
+      }
+      updateData.password = await hashPassword(body.password);
+      // Reset lockout if employee was locked
+      updateData.failedLoginAttempts = 0;
+      updateData.lockedUntil = null;
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -55,6 +73,19 @@ export async function PUT(
         createdAt: true,
       },
     });
+
+    if (updateData.password) {
+      await prisma.auditLog.create({
+        data: {
+          tenantId: session.tenantId,
+          userId: session.userId,
+          action: "RESET_PASSWORD",
+          entity: "User",
+          entityId: id,
+          details: `Mot de passe réinitialisé pour l'utilisateur ${existing.email} (${existing.name})`,
+        },
+      });
+    }
 
     return successResponse(user);
   } catch (error) {

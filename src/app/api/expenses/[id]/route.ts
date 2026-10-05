@@ -11,7 +11,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireTenantSession();
+    const session = await requireAdmin();
     const { id } = await params;
 
     const expense = await prisma.expense.findFirst({

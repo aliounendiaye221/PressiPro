@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck } from "lucide-react";
+import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck, Lock, KeyRound, Eye, EyeOff, Copy, Check, MessageSquare, AlertCircle, ShieldCheck } from "lucide-react";
 import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
 
@@ -47,13 +47,29 @@ function formatFCFA(n: number) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
-  const [tab, setTab] = useState<"pressing" | "services" | "users">("services");
+  const [tab, setTab] = useState<"pressing" | "services" | "users" | "security">("services");
 
   // Set default tab when user loads
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isAdmin) setTab("pressing");
   }, [isAdmin]);
+
+  // Security / Personal password change
+  const [pwForm, setPwForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState(false);
+
+  // Admin employee password reset modal
+  const [resetModalUser, setResetModalUser] = useState<User | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [copiedReset, setCopiedReset] = useState(false);
 
   // Tenant info
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
@@ -368,11 +384,113 @@ export default function SettingsPage() {
     setUserActionLoading(null);
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwError("");
+    setPwSuccess(false);
+
+    if (!pwForm.currentPassword) {
+      setPwError("Veuillez renseigner votre mot de passe actuel");
+      return;
+    }
+    if (pwForm.newPassword.length < 6) {
+      setPwError("Le nouveau mot de passe doit comporter au moins 6 caractères");
+      return;
+    }
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      setPwError("Les mots de passe ne correspondent pas");
+      return;
+    }
+
+    setPwLoading(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: pwForm.currentPassword,
+          newPassword: pwForm.newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPwError(data.error || "Erreur lors du changement de mot de passe");
+      } else {
+        setPwSuccess(true);
+        setPwForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+        setTimeout(() => setPwSuccess(false), 5000);
+      }
+    } catch {
+      setPwError("Erreur réseau");
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const generateRandomPassword = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `Pressi#${code}`;
+  };
+
+  const handleOpenResetModal = (u: User) => {
+    setResetModalUser(u);
+    setResetPasswordValue(generateRandomPassword());
+    setResetError("");
+    setResetSuccess(false);
+    setCopiedReset(false);
+  };
+
+  const handleAdminResetPassword = async () => {
+    if (!resetModalUser) return;
+    if (!resetPasswordValue || resetPasswordValue.length < 6) {
+      setResetError("Le mot de passe doit contenir au moins 6 caractères");
+      return;
+    }
+    setResetLoading(true);
+    setResetError("");
+    try {
+      const res = await fetch(`/api/users/${resetModalUser.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: resetPasswordValue }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResetError(data.error || "Erreur lors de la réinitialisation");
+      } else {
+        setResetSuccess(true);
+      }
+    } catch {
+      setResetError("Erreur réseau");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+    }
+    setCopiedReset(true);
+    setTimeout(() => setCopiedReset(false), 2500);
+  };
+
+  const getWhatsAppShareUrl = (targetUser: User, pass: string) => {
+    const message = encodeURIComponent(
+      `Bonjour ${targetUser.name},\n\nVoici vos nouveaux accès pour l'application PressiPro :\n👉 Identifiant : ${targetUser.email}\n👉 Mot de passe temporaire : ${pass}\n\nConnectez-vous dès maintenant sur l'application.`
+    );
+    return `https://wa.me/?text=${message}`;
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Paramètres</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Gérez vos services et utilisateurs</p>
+        <p className="text-sm text-gray-500 mt-0.5">Gérez vos services, utilisateurs et la sécurité de votre compte</p>
       </div>
 
       {/* Tabs */}
@@ -400,6 +518,12 @@ export default function SettingsPage() {
             <Users className="w-4 h-4" /> Utilisateurs
           </button>
         )}
+        <button
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${tab === "security" ? "bg-white text-primary-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          onClick={() => setTab("security")}
+        >
+          <Lock className="w-4 h-4" /> Sécurité
+        </button>
         </div>
       </div>
 
@@ -759,6 +883,19 @@ export default function SettingsPage() {
                       </button>
                     )}
 
+                    {/* Reset password button for employees */}
+                    {u.id !== user?.id && (
+                      <button
+                        type="button"
+                        className="text-xs flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
+                        onClick={() => handleOpenResetModal(u)}
+                        title="Réinitialiser le mot de passe"
+                      >
+                        <KeyRound className="w-3 h-3 text-amber-600" />
+                        <span className="hidden sm:inline">Réinitialiser</span> MDP
+                      </button>
+                    )}
+
                     {!u.active && <span className="badge bg-red-100 text-red-700">Inactif</span>}
                     {u.id === user?.id && <span className="badge bg-blue-100 text-blue-700 text-xs">Vous</span>}
                   </div>
@@ -766,6 +903,273 @@ export default function SettingsPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal Réinitialiser mot de passe employé (Admin only) */}
+      {resetModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="card bg-white max-w-md w-full shadow-2xl border border-gray-100 p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm sm:text-base">Réinitialiser le mot de passe</h3>
+                  <p className="text-xs text-gray-500">{resetModalUser.name} ({resetModalUser.email})</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResetModalUser(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {resetError && (
+              <div className="p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl">
+                {resetError}
+              </div>
+            )}
+
+            {!resetSuccess ? (
+              <div className="space-y-4">
+                <p className="text-xs text-gray-600">
+                  Définissez un nouveau mot de passe pour cet employé. Son compte sera également déverrouillé automatiquement s&apos;il était bloqué.
+                </p>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-gray-700">Nouveau mot de passe temporaire</label>
+                    <button
+                      type="button"
+                      onClick={() => setResetPasswordValue(generateRandomPassword())}
+                      className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                    >
+                      <Zap className="w-3 h-3" /> Générer un mot de passe
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={resetPasswordValue}
+                    onChange={(e) => setResetPasswordValue(e.target.value)}
+                    className="input-field font-mono text-sm tracking-wide bg-gray-50"
+                    placeholder="Ex: Pressi#9248"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setResetModalUser(null)}
+                    className="btn-secondary text-xs"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAdminResetPassword}
+                    disabled={resetLoading || !resetPasswordValue || resetPasswordValue.length < 6}
+                    className="btn-primary text-xs"
+                  >
+                    {resetLoading ? "Enregistrement..." : "Confirmer la réinitialisation"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 text-xs flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0 text-green-600" />
+                  <span>Le mot de passe de <strong>{resetModalUser.name}</strong> a été réinitialisé avec succès !</span>
+                </div>
+
+                <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+                  <span className="text-[11px] text-gray-500 uppercase tracking-wider font-semibold">Nouveaux identifiants à transmettre :</span>
+                  <div className="flex items-center justify-between font-mono text-sm bg-white p-2.5 rounded-lg border border-gray-200">
+                    <span className="select-all font-bold text-gray-900">{resetPasswordValue}</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(resetPasswordValue)}
+                      className="text-xs flex items-center gap-1 text-primary-600 hover:text-primary-700 px-2 py-1 rounded hover:bg-primary-50"
+                    >
+                      {copiedReset ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copié</> : <><Copy className="w-3.5 h-3.5" /> Copier</>}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                  <a
+                    href={getWhatsAppShareUrl(resetModalUser, resetPasswordValue)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-xs flex items-center justify-center gap-1.5 flex-1"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Envoyer sur WhatsApp</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetModalUser(null);
+                      setResetSuccess(false);
+                    }}
+                    className="btn-secondary text-xs"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Security Tab */}
+      {tab === "security" && (
+        <div className="max-w-2xl space-y-6">
+          <div className="card space-y-6">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-primary-50 text-primary-600 flex items-center justify-center shrink-0 border border-primary-100">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Changer mon mot de passe</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Mettez à jour vos identifiants pour sécuriser l&apos;accès à votre compte PressiPro.
+                </p>
+              </div>
+            </div>
+
+            {pwError && (
+              <div className="flex items-center gap-2 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{pwError}</span>
+              </div>
+            )}
+
+            {pwSuccess && (
+              <div className="flex items-center gap-2 p-3 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl animate-fade-in">
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                <span>Votre mot de passe a été modifié avec succès !</span>
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mot de passe actuel *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPw ? "text" : "password"}
+                    required
+                    className="input-field pr-10"
+                    placeholder="Votre mot de passe actuel"
+                    value={pwForm.currentPassword}
+                    onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPw(!showCurrentPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nouveau mot de passe *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPw ? "text" : "password"}
+                      required
+                      minLength={6}
+                      className="input-field pr-10"
+                      placeholder="Minimum 6 caractères"
+                      value={pwForm.newPassword}
+                      onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPw(!showNewPw)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">Au moins 6 caractères</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirmer le nouveau mot de passe *
+                  </label>
+                  <input
+                    type={showNewPw ? "text" : "password"}
+                    required
+                    minLength={6}
+                    className="input-field"
+                    placeholder="Répétez le nouveau mot de passe"
+                    value={pwForm.confirmPassword}
+                    onChange={(e) => setPwForm({ ...pwForm, confirmPassword: e.target.value })}
+                  />
+                  {pwForm.confirmPassword && pwForm.newPassword !== pwForm.confirmPassword && (
+                    <p className="text-[11px] text-red-500 mt-1">Les mots de passe ne correspondent pas</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={pwLoading || !pwForm.currentPassword || pwForm.newPassword.length < 6 || pwForm.newPassword !== pwForm.confirmPassword}
+                  className="btn-primary w-full sm:w-auto"
+                >
+                  {pwLoading ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Modification en cours...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Mettre à jour le mot de passe</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Account info card */}
+          <div className="card bg-gray-50/70 border border-gray-200/80 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-primary-600" />
+              Informations de session
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600">
+              <div className="p-2.5 rounded-lg bg-white border border-gray-200">
+                <span className="text-gray-400 block mb-0.5">Utilisateur connecté</span>
+                <span className="font-semibold text-gray-800">{user?.name} ({user?.email})</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-white border border-gray-200">
+                <span className="text-gray-400 block mb-0.5">Rôle & Permissions</span>
+                <span className="font-semibold text-gray-800">
+                  {user?.role === "SUPER_ADMIN" ? "Super Administrateur" : user?.role === "ADMIN" ? "Administrateur Pressing" : "Agent de comptoir"}
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-500">
+              Vos sessions sont chiffrées avec des jetons JWT sécurisés et vos mots de passe sont protégés par un hachage bcrypt conforme aux standards de l&apos;industrie.
+            </p>
+          </div>
         </div>
       )}
     </div>

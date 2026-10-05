@@ -66,3 +66,49 @@ describe("Profit and Loss Calculations", () => {
     expect(netProfit < 0).toBe(true);
   });
 });
+
+describe("Role-based Financial Visibility Restrictions", () => {
+  function buildDashboardPayload(role: "AGENT" | "ADMIN" | "SUPER_ADMIN", rawMetrics: { revenue: number; expenses: number }) {
+    const isOwner = role === "ADMIN" || role === "SUPER_ADMIN";
+    return {
+      revenue: {
+        today: 25000,
+        thisWeek: 150000,
+        thisMonth: rawMetrics.revenue,
+      },
+      // Restricted for agents: Net profit, margin, and expenses
+      monthlyFinancials: isOwner
+        ? {
+            totalRevenue: rawMetrics.revenue,
+            totalExpenses: rawMetrics.expenses,
+            netProfit: rawMetrics.revenue - rawMetrics.expenses,
+            margin: Math.round(((rawMetrics.revenue - rawMetrics.expenses) / rawMetrics.revenue) * 100),
+          }
+        : null,
+      hasExpenses: isOwner ? rawMetrics.expenses > 0 : false,
+    };
+  }
+
+  it("permits agents to see Revenue (CA) but strictly hides Net Profit and Bilan", () => {
+    const agentPayload = buildDashboardPayload("AGENT", { revenue: 1500000, expenses: 800000 });
+
+    // Agent CAN see CA
+    expect(agentPayload.revenue.thisMonth).toBe(1500000);
+    expect(agentPayload.revenue.today).toBe(25000);
+
+    // Agent CANNOT see Net Profit, Margin, or Expenses (Bilan)
+    expect(agentPayload.monthlyFinancials).toBeNull();
+    expect(agentPayload.hasExpenses).toBe(false);
+  });
+
+  it("provides full Bilan and Net Profit to Admin and Super Admin", () => {
+    const adminPayload = buildDashboardPayload("ADMIN", { revenue: 1500000, expenses: 800000 });
+
+    expect(adminPayload.revenue.thisMonth).toBe(1500000);
+    expect(adminPayload.monthlyFinancials).not.toBeNull();
+    expect(adminPayload.monthlyFinancials?.netProfit).toBe(700000);
+    expect(adminPayload.monthlyFinancials?.totalExpenses).toBe(800000);
+    expect(adminPayload.monthlyFinancials?.margin).toBe(47);
+    expect(adminPayload.hasExpenses).toBe(true);
+  });
+});

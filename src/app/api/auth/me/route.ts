@@ -19,10 +19,37 @@ export async function GET() {
       cookieStore.get(IMPERSONATOR_COOKIE_NAME)?.value
     );
 
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: session.tenantId },
-      select: { id: true, name: true, phone: true, address: true, logoUrl: true, waveNumber: true, omNumber: true },
-    });
+    let tenant = null;
+    try {
+      tenant = await prisma.tenant.findUnique({
+        where: { id: session.tenantId },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          address: true,
+          logoUrl: true,
+          waveNumber: true,
+          omNumber: true,
+          brandPrimaryColor: true,
+          brandAccentColor: true,
+        },
+      });
+    } catch {
+      // Fallback query without branding columns if DB schema is in transitional state
+      tenant = await prisma.tenant.findUnique({
+        where: { id: session.tenantId },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          address: true,
+          logoUrl: true,
+          waveNumber: true,
+          omNumber: true,
+        },
+      });
+    }
 
     if (!tenant && session.role !== "SUPER_ADMIN") {
       return errorResponse("Tenant introuvable", 404);

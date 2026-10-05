@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireTenantSession } from "@/lib/tenant";
+import { requireAdmin } from "@/lib/rbac";
 import { handleApiError, successResponse } from "@/lib/api-utils";
 
 const MONTH_NAMES = [
@@ -10,7 +10,7 @@ const MONTH_NAMES = [
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireTenantSession();
+    const session = await requireAdmin();
     const { searchParams } = new URL(request.url);
     const tenantId = session.tenantId;
 

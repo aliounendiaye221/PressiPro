@@ -25,15 +25,43 @@ export async function GET(request: NextRequest) {
         : {}),
     };
 
-    const [customers, total] = await Promise.all([
+    const [rawCustomers, total] = await Promise.all([
       prisma.customer.findMany({
         where,
+        include: {
+          orders: {
+            where: { deletedAt: null },
+            select: { totalAmount: true, createdAt: true },
+            orderBy: { createdAt: "desc" },
+            take: 6,
+          },
+          _count: {
+            select: { orders: { where: { deletedAt: null } } },
+          },
+        },
         orderBy: { name: "asc" },
         skip: (page - 1) * limit,
         take: limit,
       }),
       prisma.customer.count({ where }),
     ]);
+
+    const customers = rawCustomers.map((c) => {
+      const spendingTrend = c.orders.map((o) => o.totalAmount).reverse();
+      const totalSpent = c.orders.reduce((sum, o) => sum + o.totalAmount, 0);
+      return {
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        email: c.email,
+        address: c.address,
+        notes: c.notes,
+        createdAt: c.createdAt,
+        totalOrders: c._count.orders,
+        spendingTrend,
+        totalSpent,
+      };
+    });
 
     return successResponse({ customers, total, page, limit });
   } catch (error) {

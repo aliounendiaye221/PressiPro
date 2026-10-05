@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { X, Plus, AlertTriangle, Save, Loader2, DollarSign } from "lucide-react";
+import { X, AlertTriangle, Save, Loader2 } from "lucide-react";
+import { triggerHaptic, playFeedbackSound } from "@/lib/feedback";
 
 interface AddExpenseModalProps {
   onClose: () => void;
@@ -43,12 +44,14 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
 
     if (!description.trim()) {
       setError("Veuillez saisir une description de la dépense.");
+      triggerHaptic("warning");
       return;
     }
 
     const numAmount = Number(amount);
     if (!numAmount || numAmount <= 0) {
       setError("Veuillez saisir un montant valide (au moins 1 FCFA).");
+      triggerHaptic("warning");
       return;
     }
 
@@ -73,9 +76,13 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
         throw new Error(data?.error || "Erreur lors de l'enregistrement de la dépense.");
       }
 
+      triggerHaptic("success");
+      playFeedbackSound("cash");
       onSuccess();
       onClose();
     } catch (err: unknown) {
+      triggerHaptic("error");
+      playFeedbackSound("error");
       setError(err instanceof Error ? err.message : "Erreur inattendue");
     } finally {
       setSaving(false);
@@ -83,18 +90,18 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl relative my-8 animate-in fade-in zoom-in duration-200 border border-gray-100 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 dark:bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 text-gray-900 dark:text-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl relative my-8 animate-in fade-in zoom-in duration-200 border border-gray-100 dark:border-slate-800 flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/40">
           <div>
-            <h2 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center text-sm font-bold">
+            <h2 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center text-sm font-bold">
                 💸
               </span>
               <span>Enregistrer une dépense</span>
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
               Ajoutez un achat en produits, matériel, livraison ou charge
             </p>
           </div>
@@ -103,7 +110,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
             title="Fermer"
             onClick={onClose}
             disabled={saving}
-            className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
+            className="p-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-full text-gray-500 dark:text-slate-400 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -113,7 +120,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
           <div className="p-6 space-y-4 overflow-y-auto flex-1">
             {error && (
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 text-red-700 text-sm border border-red-200">
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 text-sm border border-red-200 dark:border-red-800/50">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
@@ -121,7 +128,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
 
             {/* Description */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                 Motif / Description de l&apos;achat <span className="text-red-500">*</span>
               </label>
               <input
@@ -137,7 +144,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
             {/* Amount & Date */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                   Montant (FCFA) <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
@@ -148,16 +155,16 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
                     value={amount}
                     onChange={(e) => setAmount(e.target.value ? parseInt(e.target.value) : "")}
                     placeholder="Ex: 15000"
-                    className="input-field text-sm pr-12 font-semibold text-gray-900"
+                    className="input-field text-sm pr-12 font-semibold text-gray-900 dark:text-white"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 dark:text-slate-500">
                     FCFA
                   </span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                   Date de la dépense <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -172,7 +179,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
 
             {/* Category */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                 Catégorie de dépense
               </label>
               <select
@@ -191,7 +198,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
             {/* Payment Method & Supplier */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                   Mode de règlement
                 </label>
                 <select
@@ -208,7 +215,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                   Fournisseur / Magasin
                 </label>
                 <input
@@ -223,7 +230,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
 
             {/* Notes */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1">
                 Observations / Notes
               </label>
               <input
@@ -237,7 +244,7 @@ export function AddExpenseModal({ onClose, onSuccess, defaultDate }: AddExpenseM
           </div>
 
           {/* Footer */}
-          <div className="p-4 px-6 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-3 shrink-0">
+          <div className="p-4 px-6 border-t border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/40 flex items-center justify-end gap-3 shrink-0">
             <button
               type="button"
               onClick={onClose}

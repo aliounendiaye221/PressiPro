@@ -19,6 +19,8 @@ interface Tenant {
   logoUrl?: string | null;
   waveNumber?: string | null;
   omNumber?: string | null;
+  brandPrimaryColor?: string | null;
+  brandAccentColor?: string | null;
 }
 
 interface AuthContextType {

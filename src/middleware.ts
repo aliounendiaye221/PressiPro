@@ -9,6 +9,9 @@ const PUBLIC_PATHS = [
   "/api/health",
   "/share/receipt",
   "/api/public/receipt",
+  "/api/webhooks",
+  "/checkout/simulate",
+  "/api/cinetpay/simulate",
 ];
 
 export async function middleware(request: NextRequest) {
@@ -35,10 +38,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // CSRF protection: verify Origin header on mutating API requests
+  // CSRF protection: verify Origin header on mutating API requests (except incoming webhooks)
   const method = request.method.toUpperCase();
   if (
     pathname.startsWith("/api/") &&
+    !pathname.startsWith("/api/webhooks/") &&
     ["POST", "PUT", "PATCH", "DELETE"].includes(method)
   ) {
     const origin = request.headers.get("origin");

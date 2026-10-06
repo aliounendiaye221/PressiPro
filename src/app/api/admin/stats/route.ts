@@ -143,6 +143,29 @@ export async function GET() {
       ordersByStatus.map((s: { status: string; _count: number }) => [s.status, s._count])
     );
 
+    const saasRows = (await prisma.$queryRaw`
+      SELECT COALESCE(SUM(amount), 0)::int as total
+      FROM "SubscriptionPayment"
+      WHERE status = 'SUCCESS'
+    `) as Array<{ total: number }>;
+
+    const saasPayments = (await prisma.$queryRaw`
+      SELECT sp.id, sp.plan, sp.amount, sp."transactionId", sp."paymentMethod", sp.status, sp."createdAt", t.name as "tenantName"
+      FROM "SubscriptionPayment" sp
+      LEFT JOIN "Tenant" t ON sp."tenantId" = t.id
+      ORDER BY sp."createdAt" DESC
+      LIMIT 20
+    `) as Array<{
+      id: string;
+      plan: string;
+      amount: number;
+      transactionId: string;
+      paymentMethod: string | null;
+      status: string;
+      createdAt: Date;
+      tenantName: string | null;
+    }>;
+
     return successResponse({
       kpi: {
         totalTenants,
@@ -153,6 +176,7 @@ export async function GET() {
         mrr: currentMRR,
         mrrGrowth,
         totalRevenue: totalRevenue._sum.amount || 0,
+        saasTotalRevenue: saasRows?.[0]?.total || 0,
         avgOrderValue,
         ordersThisMonth,
         ordersPrevMonth,
@@ -186,6 +210,7 @@ export async function GET() {
         tenantName: p.tenant.name,
         createdAt: p.createdAt,
       })),
+      subscriptionPayments: saasPayments || [],
       paymentsByMethod: paymentsByMethod.map((p: { method: string; _sum: { amount: number | null }; _count: number }) => ({
         method: p.method,
         total: p._sum.amount || 0,

@@ -120,6 +120,9 @@ export async function GET(
       return successResponse({
         orderCode: order.code,
         tenantName: order.tenant.name,
+        tenantPhone: order.tenant.phone,
+        tenantWaveNumber: order.tenant.waveNumber,
+        tenantOmNumber: order.tenant.omNumber,
         customerName: order.customer.name,
         paymentStatus: receiptData.paymentStatus,
         amountDue,

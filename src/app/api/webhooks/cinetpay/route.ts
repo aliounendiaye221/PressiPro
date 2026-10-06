@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     console.log(`[CinetPay Webhook] Processing notification for transaction ${transactionId}`);
 
     // Parse metadata si disponible
-    let metadata: { orderId?: string; tenantId?: string; orderCode?: string } = {};
+    let metadata: { orderId?: string; tenantId?: string; orderCode?: string; type?: string } = {};
     if (payload.cpm_custom) {
       try {
         metadata = JSON.parse(payload.cpm_custom);
@@ -59,6 +59,61 @@ export async function POST(request: NextRequest) {
     if (!checkResult.success || checkResult.status !== "ACCEPTED") {
       console.log(`[CinetPay Webhook] Transaction ${transactionId} status is: ${checkResult.status}`);
       return NextResponse.json({ message: "Status acknowledged", status: checkResult.status }, { status: 200 });
+    }
+    // Si c'est un paiement d'abonnement SaaS PressiPro (SUB-...)
+    if (transactionId.startsWith("SUB-") || metadata.type === "SUBSCRIPTION") {
+      console.log(`[CinetPay Webhook] Processing SaaS Subscription payment: ${transactionId}`);
+      try {
+        const subRows = (await prisma.$queryRaw`
+          SELECT id, "tenantId", plan, amount, status
+          FROM "SubscriptionPayment"
+          WHERE "transactionId" = ${transactionId}
+          LIMIT 1
+        `) as Array<{ id: string; tenantId: string; plan: string; amount: number; status: string }>;
+
+        const sub = subRows?.[0];
+        if (sub && sub.status !== "SUCCESS") {
+          const isYearly = sub.amount >= 100000;
+          const daysToAdd = isYearly ? 365 : 30;
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + daysToAdd);
+
+          await prisma.$queryRaw`
+            UPDATE "SubscriptionPayment"
+            SET status = 'SUCCESS',
+                "operatorId" = ${checkResult.operatorId || null},
+                "paymentMethod" = ${checkResult.paymentMethod || null},
+                "updatedAt" = NOW()
+            WHERE "transactionId" = ${transactionId}
+          `;
+
+          await prisma.$queryRaw`
+            UPDATE "Tenant"
+            SET subscription = ${sub.plan},
+                "subscribedAt" = NOW(),
+                "subscriptionExpiresAt" = ${expiresAt},
+                "updatedAt" = NOW()
+            WHERE id = ${sub.tenantId}
+          `;
+
+          await auditLog({
+            tenantId: sub.tenantId,
+            action: "SUBSCRIPTION_ACTIVATED_WEBHOOK",
+            entity: "Tenant",
+            entityId: sub.tenantId,
+            details: {
+              plan: sub.plan,
+              amount: sub.amount,
+              transactionId,
+              paymentMethod: checkResult.paymentMethod,
+              expiresAt: expiresAt.toISOString(),
+            },
+          });
+        }
+      } catch (subErr) {
+        console.error("[CinetPay Webhook Subscription Error]", subErr);
+      }
+      return NextResponse.json({ message: "Subscription payment processed successfully" }, { status: 200 });
     }
 
     // Si metadata ne contenait pas l'orderId, on extrait depuis metadata retourné par le check

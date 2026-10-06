@@ -25,6 +25,7 @@ model Tenant {
   active       Boolean  @default(true)
   subscription String   @default("FREE") // FREE, BASIC, PRO, ENTERPRISE
   subscribedAt DateTime?
+  subscriptionExpiresAt DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -35,6 +36,24 @@ model Tenant {
   payments  Payment[]
   auditLogs AuditLog[]
   expenses  Expense[]
+  subscriptionPayments SubscriptionPayment[]
+}
+
+// ─── SUBSCRIPTION PAYMENT (SAAS CINETPAY) ─────────────────
+model SubscriptionPayment {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan          String   // BASIC, PRO, ENTERPRISE
+  amount        Int      // en FCFA
+  transactionId String   @unique
+  paymentMethod String?  // WAVE, OM, CARD, etc.
+  status        String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  operatorId    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 // ─── USER ──────────────────────────────────────────────────

@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Wallet,
   Banknote,
+  Crown,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { href: "/caisse", label: "Journal de Caisse", icon: Banknote },
   { href: "/expenses", label: "Dépenses & Bilan", icon: Wallet },
   { href: "/customers", label: "Clients", icon: Users },
+  { href: "/subscription", label: "Mon Abonnement", icon: Crown },
   { href: "/settings", label: "Paramètres", icon: Settings },
 ];
 
@@ -50,7 +52,9 @@ function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
 
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const isAdmin = user?.role === "ADMIN" || isSuperAdmin;
-  const filteredNav = isAdmin ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.href !== "/expenses");
+  const filteredNav = isAdmin
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter((item) => item.href !== "/expenses" && item.href !== "/subscription");
   const navItems = isSuperAdmin
     ? [...SUPER_ADMIN_NAV, ...filteredNav]
     : filteredNav;
@@ -171,6 +175,28 @@ function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
             );
           })}
         </nav>
+
+        {/* Subscription Quick Card */}
+        {isAdmin && (
+          <div className="mx-3.5 mb-2.5 p-3 rounded-2xl bg-gradient-to-r from-amber-500/10 via-primary-500/10 to-amber-500/10 border border-amber-500/25">
+            <div className="flex items-center justify-between mb-1">
+              <span className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400">
+                <Crown className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                Abonnement
+              </span>
+              <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded-md bg-amber-500 text-white shadow-xs">
+                {(tenant as any)?.subscription || "FREE"}
+              </span>
+            </div>
+            <Link
+              href="/subscription"
+              onClick={() => setMobileOpen(false)}
+              className="text-[11px] font-bold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1 mt-1"
+            >
+              Gérer / Renouveler Wave <ChevronRight className="w-3 h-3" />
+            </Link>
+          </div>
+        )}
 
         {/* User profile footer */}
         <div className="p-3.5 border-t border-gray-100/90 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/60">

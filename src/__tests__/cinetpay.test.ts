@@ -5,6 +5,7 @@ import {
   initiateCinetPayPayment,
   checkCinetPayTransaction,
   getCinetPayConfig,
+  registerSimulatedTransaction,
 } from "@/lib/cinetpay";
 
 // Mock fetch globally
@@ -121,6 +122,29 @@ describe("CinetPay Integration Tests", () => {
       expect(result.paymentToken).toBe("mock_token_123");
       expect(result.transactionId).toContain("P00145");
     });
+
+    it("should route to simulation gateway when CINETPAY_SIMULATE is true", async () => {
+      process.env.CINETPAY_API_KEY = "sk_test_mock_key";
+      process.env.CINETPAY_SIMULATE = "true";
+
+      const result = await initiateCinetPayPayment({
+        amount: 15000,
+        orderId: "sub_123",
+        orderCode: "SUB-PRO",
+        customerName: "Aliou Ndiaye",
+        tenantId: "tenant_sim",
+        tenantName: "Pressing Étoile",
+        notifyUrl: "https://pressipro.tech/api/webhooks/cinetpay",
+        returnUrl: "https://pressipro.tech/subscription?payment=return",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.isSimulated).toBe(true);
+      expect(result.paymentUrl).toContain("/checkout/simulate");
+      expect(result.paymentUrl).toContain("15000");
+
+      delete process.env.CINETPAY_SIMULATE;
+    });
   });
 
   describe("checkCinetPayTransaction", () => {
@@ -149,6 +173,22 @@ describe("CinetPay Integration Tests", () => {
       expect(check.status).toBe("ACCEPTED");
       expect(check.amount).toBe(3500);
       expect(check.paymentMethod).toBe("WAVE");
+    });
+
+    it("should return simulated transaction status immediately if registered", async () => {
+      registerSimulatedTransaction({
+        transactionId: "SUB-SIMULATED-TEST-99",
+        amount: 15000,
+        status: "ACCEPTED",
+        paymentMethod: "OM",
+        date: new Date().toISOString(),
+      });
+
+      const check = await checkCinetPayTransaction("SUB-SIMULATED-TEST-99");
+      expect(check.success).toBe(true);
+      expect(check.status).toBe("ACCEPTED");
+      expect(check.amount).toBe(15000);
+      expect(check.paymentMethod).toBe("OM");
     });
   });
 });

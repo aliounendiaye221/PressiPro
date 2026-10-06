@@ -682,20 +682,23 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="border-t pt-4">
-                  <h3 className="font-medium text-sm text-gray-900 mb-3 flex items-center gap-2"><Smartphone className="w-4 h-4 text-orange-500" /> Paiement mobile (affiché sur reçus)</h3>
+                  <h3 className="font-medium text-sm text-gray-900 mb-3 flex items-center gap-2"><Smartphone className="w-4 h-4 text-orange-500" /> Paiement mobile & Wave Business</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         <span className="flex items-center gap-1.5">
-                          <span className="inline-block w-3 h-3 rounded-full bg-blue-500"></span> Wave
+                          <span className="inline-block w-3 h-3 rounded-full bg-[#1DA1F2]"></span> Numéro Wave ou Lien Wave Business
                         </span>
                       </label>
                       <input
                         className="input-field"
                         value={tenantForm.waveNumber}
                         onChange={(e) => setTenantForm({ ...tenantForm, waveNumber: e.target.value })}
-                        placeholder="77 000 00 00"
+                        placeholder="78 000 00 00 ou https://pay.wave.com/m/..."
                       />
+                      <p className="mt-1 text-[11px] text-gray-500">
+                        Indiquez votre numéro Wave ou collez votre lien marchand Wave Business (<code className="text-[#0c85d0]">pay.wave.com</code>).
+                      </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -713,55 +716,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50/60 to-white p-4 space-y-3.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl bg-sky-600 text-white flex items-center justify-center shadow-sm">
-                          <CreditCard className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-sm text-gray-900">Paiement en ligne CinetPay</h3>
-                          <p className="text-xs text-gray-500">Permettre aux clients de payer leurs commandes par Wave, OM et CB</p>
-                        </div>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={tenantForm.cinetpayEnabled}
-                          onChange={(e) => setTenantForm({ ...tenantForm, cinetpayEnabled: e.target.checked })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
-                      </label>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <label className="block font-medium text-gray-700 mb-1">CinetPay Site ID</label>
-                        <input
-                          className="input-field text-xs"
-                          value={tenantForm.cinetpaySiteId}
-                          onChange={(e) => setTenantForm({ ...tenantForm, cinetpaySiteId: e.target.value })}
-                          placeholder="Ex: 123456"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-medium text-gray-700 mb-1">CinetPay Clé API (API Key)</label>
-                        <input
-                          className="input-field text-xs font-mono"
-                          value={tenantForm.cinetpayApiKey}
-                          onChange={(e) => setTenantForm({ ...tenantForm, cinetpayApiKey: e.target.value })}
-                          placeholder="sk_test_... ou Clé API CinetPay"
-                        />
-                      </div>
-                    </div>
-
-                    <p className="text-[11px] text-gray-500">
-                      💡 Si ces champs sont laissés vides, la clé globale de la plateforme configurée sur le serveur sera utilisée par défaut.
-                    </p>
-                  </div>
-                </div>
               </div>
 
               <button className="btn-primary" onClick={saveTenant} disabled={tenantSaving || !tenantForm.name}>

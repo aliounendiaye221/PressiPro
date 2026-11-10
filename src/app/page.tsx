@@ -566,7 +566,7 @@ export default function LandingPage() {
                   <li>
                     <Link href="/privacy" className="text-sm text-gray-400 hover:text-white transition-colors">
                       Confidentialité
-                    </a>
+                    </Link>
                   </li>
                   <li>
                     <Link href="/terms" className="text-sm text-gray-400 hover:text-white transition-colors">

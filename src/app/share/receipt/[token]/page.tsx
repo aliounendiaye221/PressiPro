@@ -47,6 +47,7 @@ interface StatusHistoryItem {
 }
 
 interface TenantMeta {
+  id?: string;
   name: string;
   phone?: string | null;
   address?: string | null;
@@ -66,6 +67,7 @@ interface CustomerMeta {
 
 interface ShareMeta {
   orderId?: string;
+  tenantId?: string;
   orderCode: string;
   status: "RECU" | "TRAITEMENT" | "PRET" | "LIVRE";
   createdAt: string;

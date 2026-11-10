@@ -12,10 +12,11 @@ export async function POST(request: NextRequest) {
     const session = await requireAdmin();
 
     const ip = getClientIp(request);
-    const rl = await checkRateLimit(`sub-wave-init:${session.tenantId}:${ip}`, {
-      limit: 10,
-      windowSeconds: 60,
-    });
+    const rl = await checkRateLimit(
+      `sub-wave-init:${session.tenantId}:${ip}`,
+      10,
+      60 * 1000
+    );
     if (!rl.allowed) {
       return errorResponse("Trop de tentatives. Veuillez patienter une minute.", 429);
     }

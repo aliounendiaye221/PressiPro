@@ -282,24 +282,42 @@ export default function TenantPublicCatalogPage() {
     setIsOrderModalOpen(false);
   };
 
+  const primaryColor = tenant?.brandPrimaryColor || "#0f766e";
+  const accentColor = tenant?.brandAccentColor || "#f0fdfa";
+
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 px-3 py-6 sm:py-10 flex items-start justify-center pb-32">
+    <main className="min-h-screen bg-slate-50/70 text-slate-900 px-3 py-6 sm:py-10 flex items-start justify-center pb-36 font-sans">
       <div className="w-full max-w-lg space-y-4">
         {/* PRESSING HEADER CARD */}
         {tenant && (
-          <header className="rounded-3xl border border-white/10 bg-slate-900/90 backdrop-blur-xl p-5 shadow-2xl space-y-3.5">
+          <header className="rounded-3xl border border-slate-200/90 bg-white p-5 shadow-sm space-y-3.5">
+            <div className="h-1.5 w-full rounded-full" style={{ backgroundColor: primaryColor }} />
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white flex items-center justify-center font-black text-xl shadow-lg shadow-teal-500/20 shrink-0">
-                  {tenant.name.slice(0, 1).toUpperCase()}
-                </div>
+                {tenant.logoUrl ? (
+                  <img
+                    src={tenant.logoUrl}
+                    alt={tenant.name}
+                    className="w-14 h-14 rounded-2xl object-cover border border-slate-200 shadow-sm bg-white shrink-0"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="w-14 h-14 rounded-2xl text-white flex items-center justify-center font-black text-2xl shadow-sm shrink-0"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {tenant.name.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
                 <div className="min-w-0">
-                  <h1 className="text-lg font-black text-white truncate tracking-tight">
+                  <h1 className="text-lg font-black text-slate-900 truncate tracking-tight">
                     {tenant.name}
                   </h1>
-                  <p className="text-xs text-slate-400 flex items-center gap-1.5 truncate">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                    <span>Tarifs &amp; Devis officiel en direct</span>
+                  <p className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                    <span>Grille tarifaire officielle</span>
                   </p>
                 </div>
               </div>
@@ -307,7 +325,7 @@ export default function TenantPublicCatalogPage() {
               {tenant.phone && (
                 <a
                   href={`tel:${tenant.phone.replace(/[^0-9+]/g, "")}`}
-                  className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-teal-400 transition-colors shrink-0"
+                  className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 transition-colors shrink-0"
                   title="Appeler le pressing"
                 >
                   <Phone className="w-4 h-4" />
@@ -316,8 +334,8 @@ export default function TenantPublicCatalogPage() {
             </div>
 
             {tenant.address && (
-              <div className="pt-2.5 border-t border-white/5 flex items-center gap-2 text-xs text-slate-400">
-                <MapPin className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+              <div className="pt-2.5 border-t border-slate-100 flex items-center gap-2 text-xs text-slate-500">
+                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span className="truncate">{tenant.address}</span>
               </div>
             )}
@@ -326,18 +344,18 @@ export default function TenantPublicCatalogPage() {
 
         {/* LOADING & ERROR STATES */}
         {loading && (
-          <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-8 flex flex-col items-center justify-center gap-3 text-slate-300 text-sm">
-            <LoaderCircle className="h-7 w-7 animate-spin text-teal-400" />
+          <div className="rounded-3xl border border-slate-200 bg-white p-8 flex flex-col items-center justify-center gap-3 text-slate-600 text-sm shadow-xs">
+            <LoaderCircle className="h-7 w-7 animate-spin text-teal-600" />
             <span>Chargement des tarifs en direct...</span>
           </div>
         )}
 
         {!!error && (
-          <div className="rounded-3xl border border-red-500/30 bg-red-950/60 p-5 text-red-200 space-y-1">
+          <div className="rounded-3xl border border-red-200 bg-red-50 p-5 text-red-900 space-y-1 shadow-xs">
             <p className="flex items-center gap-2 font-bold text-sm">
-              <AlertTriangle className="h-4 w-4 text-red-400" /> Oups !
+              <AlertTriangle className="h-4 w-4 text-red-600" /> Oups !
             </p>
-            <p className="text-xs text-red-300/90">{error}</p>
+            <p className="text-xs text-red-700">{error}</p>
           </div>
         )}
 
@@ -352,13 +370,13 @@ export default function TenantPublicCatalogPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Rechercher (chemise, boubou, couette, kilo...)"
-                  className="w-full pl-10 pr-10 py-3 rounded-2xl bg-slate-900 border border-white/10 text-white placeholder-slate-500 text-xs focus:outline-hidden focus:border-teal-500 transition-all"
+                  className="w-full pl-10 pr-10 py-3 rounded-2xl bg-white border border-slate-200 text-slate-900 placeholder-slate-400 text-xs shadow-xs focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery("")}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -370,25 +388,35 @@ export default function TenantPublicCatalogPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedCategory("ALL")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                  style={
                     selectedCategory === "ALL"
-                      ? "bg-teal-500 text-slate-950 font-bold shadow-md shadow-teal-500/20"
-                      : "bg-white/5 text-slate-300 hover:bg-white/10 border border-white/5"
+                      ? { backgroundColor: primaryColor, color: "#ffffff", borderColor: primaryColor }
+                      : undefined
+                  }
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                    selectedCategory === "ALL"
+                      ? "shadow-sm font-bold"
+                      : "bg-white text-slate-700 hover:bg-slate-100 border-slate-200"
                   }`}
                 >
-                  Tous les articles
+                  Tous les articles ({services.length})
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSelectedCategory("POPULAR")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap flex items-center gap-1 transition-all cursor-pointer ${
+                  style={
                     selectedCategory === "POPULAR"
-                      ? "bg-teal-500 text-slate-950 font-bold shadow-md shadow-teal-500/20"
-                      : "bg-white/5 text-slate-300 hover:bg-white/10 border border-white/5"
+                      ? { backgroundColor: primaryColor, color: "#ffffff", borderColor: primaryColor }
+                      : undefined
+                  }
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap flex items-center gap-1 transition-all cursor-pointer border ${
+                    selectedCategory === "POPULAR"
+                      ? "shadow-sm font-bold"
+                      : "bg-white text-slate-700 hover:bg-slate-100 border-slate-200"
                   }`}
                 >
-                  <Sparkles className="w-3 h-3 text-amber-400 fill-amber-400" />
+                  <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500" />
                   Populaires
                 </button>
 
@@ -396,10 +424,15 @@ export default function TenantPublicCatalogPage() {
                   <button
                     type="button"
                     onClick={() => setSelectedCategory("PER_KG")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                    style={
                       selectedCategory === "PER_KG"
-                        ? "bg-teal-500 text-slate-950 font-bold shadow-md shadow-teal-500/20"
-                        : "bg-white/5 text-slate-300 hover:bg-white/10 border border-white/5"
+                        ? { backgroundColor: primaryColor, color: "#ffffff", borderColor: primaryColor }
+                        : undefined
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                      selectedCategory === "PER_KG"
+                        ? "shadow-sm font-bold"
+                        : "bg-white text-slate-700 hover:bg-slate-100 border-slate-200"
                     }`}
                   >
                     ⚖️ Au Kilo
@@ -411,10 +444,15 @@ export default function TenantPublicCatalogPage() {
                     key={cat}
                     type="button"
                     onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                    style={
                       selectedCategory === cat
-                        ? "bg-teal-500 text-slate-950 font-bold shadow-md shadow-teal-500/20"
-                        : "bg-white/5 text-slate-300 hover:bg-white/10 border border-white/5"
+                        ? { backgroundColor: primaryColor, color: "#ffffff", borderColor: primaryColor }
+                        : undefined
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                      selectedCategory === cat
+                        ? "shadow-sm font-bold"
+                        : "bg-white text-slate-700 hover:bg-slate-100 border-slate-200"
                     }`}
                   >
                     {cat}
@@ -426,7 +464,7 @@ export default function TenantPublicCatalogPage() {
             {/* SERVICES LIST */}
             <section className="space-y-3">
               {filteredServices.length === 0 ? (
-                <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-8 text-center text-slate-400 text-xs space-y-2">
+                <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-slate-500 text-xs space-y-2 shadow-xs">
                   <p>Aucun article ne correspond à votre recherche.</p>
                   <button
                     type="button"
@@ -434,7 +472,8 @@ export default function TenantPublicCatalogPage() {
                       setSearchQuery("");
                       setSelectedCategory("ALL");
                     }}
-                    className="text-teal-400 font-semibold underline"
+                    style={{ color: primaryColor }}
+                    className="font-bold underline cursor-pointer"
                   >
                     Afficher tous les articles
                   </button>
@@ -449,32 +488,38 @@ export default function TenantPublicCatalogPage() {
                   return (
                     <article
                       key={service.id}
-                      className={`rounded-3xl border p-4 transition-all ${
+                      style={{
+                        borderColor: cartEntry ? primaryColor : undefined,
+                      }}
+                      className={`rounded-2xl border p-4 transition-all bg-white ${
                         cartEntry
-                          ? "bg-gradient-to-r from-teal-950/40 via-slate-900 to-slate-900 border-teal-500/50 shadow-lg shadow-teal-950/20"
-                          : "bg-slate-900/80 border-white/10 hover:border-white/20"
+                          ? "border-2 shadow-md ring-2 ring-teal-500/10"
+                          : "border-slate-200/90 shadow-xs hover:shadow-sm"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <h2 className="text-sm font-bold text-white truncate">{service.name}</h2>
+                            <h2 className="text-sm font-bold text-slate-900 truncate">{service.name}</h2>
                             {service.isQuickItem && (
-                              <span className="text-[10px] font-black bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-md border border-amber-500/30">
+                              <span className="text-[10px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-md border border-amber-200">
                                 Populaire
                               </span>
                             )}
                           </div>
 
                           <div className="flex items-center gap-2 mt-1 text-xs">
-                            <span className="font-mono font-black text-teal-300">
+                            <span
+                              className="font-mono font-black text-sm"
+                              style={{ color: primaryColor }}
+                            >
                               {formatFCFA(service.price)}
-                              <span className="text-[10px] font-normal text-slate-400 ml-0.5">
+                              <span className="text-[11px] font-normal text-slate-500 ml-1">
                                 {isKilo ? "/ kg" : "/ pièce"}
                               </span>
                             </span>
                             {service.category && (
-                              <span className="text-[11px] text-slate-400 truncate">
+                              <span className="text-[11px] text-slate-500 truncate">
                                 • {service.category}
                               </span>
                             )}
@@ -488,27 +533,29 @@ export default function TenantPublicCatalogPage() {
                               <button
                                 type="button"
                                 onClick={() => setItemQuantity(service, 1)}
-                                className="flex items-center gap-1 px-3 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-all shadow-md shadow-teal-500/20 cursor-pointer"
+                                style={{ backgroundColor: primaryColor }}
+                                className="flex items-center gap-1 px-3.5 py-2 rounded-xl text-white font-bold text-xs transition-all shadow-sm active:scale-95 cursor-pointer hover:opacity-90"
                               >
                                 <Plus className="w-3.5 h-3.5" />
                                 <span>Ajouter</span>
                               </button>
                             ) : (
-                              <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-xl border border-teal-500/40">
+                              <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
                                 <button
                                   type="button"
                                   onClick={() => setItemQuantity(service, quantity - 1)}
-                                  className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer"
+                                  className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 flex items-center justify-center text-slate-700 shadow-xs cursor-pointer"
                                 >
                                   <Minus className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="font-mono font-black text-xs text-white min-w-[20px] text-center">
+                                <span className="font-mono font-black text-xs text-slate-900 min-w-[20px] text-center">
                                   {quantity}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => setItemQuantity(service, quantity + 1)}
-                                  className="w-7 h-7 rounded-lg bg-teal-500 hover:bg-teal-400 flex items-center justify-center text-slate-950 font-bold cursor-pointer"
+                                  style={{ backgroundColor: primaryColor }}
+                                  className="w-7 h-7 rounded-lg text-white flex items-center justify-center font-bold shadow-xs cursor-pointer hover:opacity-90"
                                 >
                                   <Plus className="w-3.5 h-3.5" />
                                 </button>
@@ -520,8 +567,8 @@ export default function TenantPublicCatalogPage() {
 
                       {/* SPECIAL HELPER FOR PER_KG SERVICES */}
                       {isKilo && (
-                        <div className="mt-3 pt-3 border-t border-white/5 space-y-2.5">
-                          <p className="text-[11px] text-slate-400">
+                        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2.5">
+                          <p className="text-[11px] text-slate-500 font-medium">
                             Pas de balance ? Estimez facilement par taille de sac :
                           </p>
 
@@ -531,36 +578,45 @@ export default function TenantPublicCatalogPage() {
                                 key={preset.weight}
                                 type="button"
                                 onClick={() => setKiloWeight(service, preset.weight)}
+                                style={
+                                  currentWeight === preset.weight
+                                    ? { borderColor: primaryColor, backgroundColor: accentColor }
+                                    : undefined
+                                }
                                 className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                                   currentWeight === preset.weight
-                                    ? "bg-teal-500/20 border-teal-500 text-white"
-                                    : "bg-white/5 border-white/5 text-slate-300 hover:bg-white/10"
+                                    ? "font-bold text-slate-900 shadow-xs"
+                                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
                                 }`}
                               >
                                 <span className="text-[11px] font-bold block">{preset.label}</span>
-                                <span className="text-[9px] text-slate-400 block truncate">{preset.desc}</span>
+                                <span className="text-[9px] text-slate-500 block truncate">{preset.desc}</span>
                               </button>
                             ))}
                           </div>
 
                           {/* DIRECT WEIGHT STEPPER */}
-                          <div className="flex items-center justify-between gap-2 bg-slate-800/80 p-2 rounded-2xl border border-white/5">
-                            <span className="text-xs text-slate-300 font-medium">Poids exact :</span>
+                          <div className="flex items-center justify-between gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-200">
+                            <span className="text-xs text-slate-600 font-medium">Poids exact :</span>
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => setKiloWeight(service, Math.max(0, currentWeight - 0.5))}
-                                className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer"
+                                className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 border border-slate-200 flex items-center justify-center text-slate-700 shadow-xs cursor-pointer"
                               >
                                 <Minus className="w-3.5 h-3.5" />
                               </button>
-                              <span className="font-mono font-black text-xs text-teal-300 min-w-[50px] text-center">
+                              <span
+                                className="font-mono font-black text-xs min-w-[50px] text-center"
+                                style={{ color: primaryColor }}
+                              >
                                 {currentWeight > 0 ? `${currentWeight} kg` : "0 kg"}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => setKiloWeight(service, currentWeight + 0.5)}
-                                className="w-7 h-7 rounded-lg bg-teal-500 hover:bg-teal-400 flex items-center justify-center text-slate-950 font-bold cursor-pointer"
+                                style={{ backgroundColor: primaryColor }}
+                                className="w-7 h-7 rounded-lg text-white flex items-center justify-center font-bold shadow-xs cursor-pointer hover:opacity-90"
                               >
                                 <Plus className="w-3.5 h-3.5" />
                               </button>
@@ -581,9 +637,9 @@ export default function TenantPublicCatalogPage() {
       {hasItemsInCart && (
         <aside
           aria-label="Barre d'estimation du panier"
-          className="fixed bottom-0 left-0 right-0 p-3 sm:p-4 z-40 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent backdrop-blur-md animate-fade-in"
+          className="fixed bottom-0 left-0 right-0 p-3 sm:p-4 z-40 bg-gradient-to-t from-white via-white/95 to-transparent backdrop-blur-md animate-fade-in border-t border-slate-200/50"
         >
-          <div className="max-w-lg mx-auto rounded-3xl bg-slate-900 border-2 border-teal-500/60 p-4 shadow-2xl shadow-teal-950/50 flex items-center justify-between gap-3">
+          <div className="max-w-lg mx-auto rounded-3xl bg-slate-900 p-4 shadow-2xl flex items-center justify-between gap-3 text-white">
             <div className="min-w-0">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
                 Estimation totale
@@ -603,8 +659,9 @@ export default function TenantPublicCatalogPage() {
             <button
               type="button"
               onClick={() => setIsOrderModalOpen(true)}
-              className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 px-4 py-3 text-xs font-black text-slate-950 shadow-lg shadow-teal-500/25 transition-all active:scale-[0.98] cursor-pointer shrink-0"
+              className="flex items-center gap-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 px-4 py-3 text-xs font-black text-slate-950 shadow-lg shadow-emerald-500/25 transition-all active:scale-[0.98] cursor-pointer shrink-0"
             >
+              <MessageCircle className="w-4 h-4 fill-slate-950" />
               <span>Commander</span>
               <ArrowRight className="w-4 h-4 ml-0.5" />
             </button>
@@ -618,20 +675,23 @@ export default function TenantPublicCatalogPage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="order-modal-title"
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-md p-0 sm:p-4 animate-fade-in"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fade-in"
         >
-          <div className="bg-slate-900 rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4 border border-white/10 text-slate-100">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4 border border-slate-200 text-slate-900">
             {/* MODAL HEADER */}
-            <div className="flex items-center justify-between border-b pb-3 border-white/10">
+            <div className="flex items-center justify-between border-b pb-3 border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                <div
+                  className="p-2 rounded-xl text-white"
+                  style={{ backgroundColor: primaryColor }}
+                >
                   <ShoppingBag className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 id="order-modal-title" className="font-bold text-sm text-white">
+                  <h3 id="order-modal-title" className="font-bold text-sm text-slate-900">
                     Finaliser votre demande
                   </h3>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500">
                     Transmise directement sur le WhatsApp officiel du pressing
                   </p>
                 </div>
@@ -641,20 +701,20 @@ export default function TenantPublicCatalogPage() {
                 type="button"
                 aria-label="Fermer"
                 onClick={() => setIsOrderModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* CART SUMMARY RECAP */}
-            <div className="p-3.5 rounded-2xl bg-white/5 border border-white/5 space-y-2">
-              <div className="flex justify-between items-center text-xs font-bold text-slate-300 border-b border-white/5 pb-2">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex justify-between items-center text-xs font-bold text-slate-700 border-b border-slate-200 pb-2">
                 <span>Panier de linge</span>
                 <button
                   type="button"
                   onClick={clearCart}
-                  className="text-rose-400 hover:text-rose-300 flex items-center gap-1 font-normal text-[11px]"
+                  className="text-rose-600 hover:text-rose-700 flex items-center gap-1 font-normal text-[11px]"
                 >
                   <RotateCcw className="w-3 h-3" /> Vider
                 </button>
@@ -662,126 +722,137 @@ export default function TenantPublicCatalogPage() {
 
               <div className="max-h-32 overflow-y-auto space-y-1.5 text-xs pr-1">
                 {Object.values(cart).map((item) => (
-                  <div key={item.serviceId} className="flex justify-between text-slate-300 text-xs">
+                  <div key={item.serviceId} className="flex justify-between text-slate-700 text-xs">
                     <span className="truncate">
                       {item.pricingType === "PER_KG"
                         ? `${item.weight} kg ${item.name}`
                         : `${item.quantity}x ${item.name}`}
                     </span>
-                    <span className="font-mono font-bold text-white shrink-0 ml-2">
+                    <span className="font-mono font-bold text-slate-900 shrink-0 ml-2">
                       {formatFCFA(item.total)}
                     </span>
                   </div>
                 ))}
               </div>
 
-              <div className="pt-2 border-t border-white/5 flex justify-between items-center text-sm font-black text-teal-300">
-                <span>Total estimé :</span>
-                <span className="font-mono">{formatFCFA(totalAmount)}</span>
+              <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-sm font-black">
+                <span className="text-slate-700">Total estimé :</span>
+                <span className="font-mono text-base" style={{ color: primaryColor }}>
+                  {formatFCFA(totalAmount)}
+                </span>
               </div>
             </div>
 
             {/* ERROR MESSAGE */}
             {formError && (
-              <div className="rounded-xl bg-red-950/80 border border-red-500/30 p-2.5 text-xs text-red-300 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+              <div className="rounded-xl bg-red-50 border border-red-200 p-2.5 text-xs text-red-700 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
                 <span>{formError}</span>
               </div>
             )}
 
             {/* MODE SELECTION */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300 block">
+              <label className="text-xs font-bold text-slate-700 block">
                 Mode de traitement :
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setServiceMode("DELIVERY")}
+                  style={
+                    serviceMode === "DELIVERY"
+                      ? { borderColor: primaryColor, backgroundColor: accentColor }
+                      : undefined
+                  }
                   className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
                     serviceMode === "DELIVERY"
-                      ? "bg-teal-500/20 border-teal-500 text-white"
-                      : "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10"
+                      ? "border-2 text-slate-900 shadow-xs"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
                   }`}
                 >
                   <div className="flex items-center gap-1.5">
-                    <Truck className="w-4 h-4 text-teal-400" />
-                    <span className="text-xs font-bold">Collecte à domicile</span>
+                    <Truck className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-bold">Collecte &amp; Livraison</span>
                   </div>
-                  <span className="text-[10px] text-slate-400">Un livreur passe chez vous</span>
+                  <span className="text-[10px] text-slate-500">Un livreur passe chez vous</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setServiceMode("DROP_OFF")}
+                  style={
+                    serviceMode === "DROP_OFF"
+                      ? { borderColor: primaryColor, backgroundColor: accentColor }
+                      : undefined
+                  }
                   className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-1 ${
                     serviceMode === "DROP_OFF"
-                      ? "bg-teal-500/20 border-teal-500 text-white"
-                      : "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10"
+                      ? "border-2 text-slate-900 shadow-xs"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
                   }`}
                 >
                   <div className="flex items-center gap-1.5">
-                    <Store className="w-4 h-4 text-teal-400" />
+                    <Store className="w-4 h-4 text-blue-600" />
                     <span className="text-xs font-bold">Dépôt au pressing</span>
                   </div>
-                  <span className="text-[10px] text-slate-400">Je dépose au comptoir</span>
+                  <span className="text-[10px] text-slate-500">Vous déposez vos habits</span>
                 </button>
               </div>
             </div>
 
             {/* FORM INPUTS */}
-            <div className="space-y-3 text-xs">
+            <div className="space-y-3 pt-1 text-xs">
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                  Votre nom complet <span className="text-teal-400">*</span>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  Votre nom complet <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Ex : Aminata Ndiaye"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-hidden focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-teal-500"
                 />
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                  Votre numéro de téléphone (WhatsApp) <span className="text-teal-400">*</span>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  Votre numéro WhatsApp / Téléphone <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="tel"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   placeholder="Ex : 77 123 45 67"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-hidden focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-teal-500"
                 />
               </div>
 
               {serviceMode === "DELIVERY" && (
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                    Quartier &amp; Adresse de collecte <span className="text-teal-400">*</span>
+                  <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                    Quartier &amp; Adresse de collecte <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={customerAddress}
                     onChange={(e) => setCustomerAddress(e.target.value)}
-                    placeholder="Ex : Almadies, près de la pharmacie..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-hidden focus:border-teal-500"
+                    placeholder="Ex : Almadies, en face de la pharmacie..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-teal-500"
                   />
                 </div>
               )}
 
-              {/* SLOT & PREFERENCES */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                  <label className="text-[11px] font-semibold text-slate-700 block mb-1">
                     Créneau souhaité
                   </label>
                   <select
                     value={preferredSlot}
                     onChange={(e) => setPreferredSlot(e.target.value)}
-                    className="w-full px-2.5 py-2.5 rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-hidden focus:border-teal-500 text-xs"
+                    className="w-full px-2.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-teal-500 text-xs"
                   >
                     <option value="Dès que possible">Dès que possible</option>
                     <option value="Aujourd'hui après-midi (14h-18h)">Aujourd&apos;hui (14h-18h)</option>
@@ -791,13 +862,13 @@ export default function TenantPublicCatalogPage() {
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                  <label className="text-[11px] font-semibold text-slate-700 block mb-1">
                     Finition souhaitée
                   </label>
                   <select
                     value={carePreference}
                     onChange={(e) => setCarePreference(e.target.value)}
-                    className="w-full px-2.5 py-2.5 rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-hidden focus:border-teal-500 text-xs"
+                    className="w-full px-2.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-teal-500 text-xs"
                   >
                     <option value="Sur cintre">Sur cintre</option>
                     <option value="Plié">Plié</option>
@@ -809,7 +880,7 @@ export default function TenantPublicCatalogPage() {
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
                   Note ou consigne particulière (optionnel)
                 </label>
                 <input
@@ -817,7 +888,7 @@ export default function TenantPublicCatalogPage() {
                   value={specialNotes}
                   onChange={(e) => setSpecialNotes(e.target.value)}
                   placeholder="Ex : Tache sur le pantalon noir, Bazin délicat..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-white/10 text-white focus:outline-hidden focus:border-teal-500"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-teal-500"
                 />
               </div>
             </div>
@@ -832,7 +903,7 @@ export default function TenantPublicCatalogPage() {
                 <MessageCircle className="w-4 h-4" />
                 <span>Envoyer ma demande sur WhatsApp</span>
               </button>
-              <p className="text-[10px] text-center text-slate-400 mt-2">
+              <p className="text-[10px] text-center text-slate-500 mt-2">
                 Un message structuré sera pré-rempli sur votre WhatsApp vers le pressing.
               </p>
             </div>

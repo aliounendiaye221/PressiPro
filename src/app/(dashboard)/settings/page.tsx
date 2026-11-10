@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck, Lock, KeyRound, Eye, EyeOff, Copy, Check, MessageSquare, AlertCircle, ShieldCheck, Sparkles, ExternalLink } from "lucide-react";
+import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck, Lock, KeyRound, Eye, EyeOff, Copy, Check, MessageSquare, AlertCircle, ShieldCheck, Sparkles, ExternalLink, Upload, Image as ImageIcon } from "lucide-react";
 import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
 
@@ -257,6 +257,55 @@ export default function SettingsPage() {
       pricingType: s.pricingType,
     });
     setShowNewService(false);
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setTenantError("Veuillez sélectionner un fichier image valide (JPG, PNG, WebP).");
+      return;
+    }
+
+    setTenantError("");
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Redimensionnement automatique sur Canvas (max 320x320) pour un logo net et léger (< 40 Ko)
+        const maxDim = 320;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.88);
+          setTenantForm((prev) => ({ ...prev, logoUrl: compressedDataUrl }));
+          setTenantSuccess(false);
+        }
+      };
+      img.onerror = () => {
+        setTenantError("Impossible de lire l'image sélectionnée.");
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   const saveTenant = async () => {
@@ -657,19 +706,72 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Logo du pressing</label>
-                  <input
-                    className="input-field"
-                    value={tenantForm.logoUrl}
-                    onChange={(e) => setTenantForm({ ...tenantForm, logoUrl: e.target.value })}
-                    placeholder="https://.../logo.png"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Utilisez une URL HTTPS publique vers votre logo PNG ou JPG.</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Logo du pressing
+                  </label>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-2xl border border-gray-200 bg-white shadow-xs">
+                    {/* Visual Preview / Avatar */}
+                    <div className="relative group shrink-0">
+                      {tenantForm.logoUrl ? (
+                        <div className="relative">
+                          <img
+                            src={tenantForm.logoUrl}
+                            alt="Logo pressing"
+                            className="w-16 h-16 rounded-2xl object-cover border border-gray-200 shadow-sm bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setTenantForm({ ...tenantForm, logoUrl: "" })}
+                            className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-red-600 text-white shadow-md hover:bg-red-700 transition-colors cursor-pointer"
+                            title="Supprimer le logo"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-sm"
+                          style={{ backgroundColor: tenantForm.brandPrimaryColor || "#0f766e" }}
+                        >
+                          {(tenantForm.name || "PP").slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Import Controls */}
+                    <div className="flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs transition-all cursor-pointer shadow-sm active:scale-98">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Importer depuis la galerie / photo</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleLogoUpload}
+                            className="hidden"
+                          />
+                        </label>
+
+                        {tenantForm.logoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setTenantForm({ ...tenantForm, logoUrl: "" })}
+                            className="px-3 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-medium transition-colors cursor-pointer"
+                          >
+                            Retirer le logo
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Choisissez une photo ou le logo de votre pressing depuis votre téléphone ou ordinateur. Il sera automatiquement optimisé et affiché sur votre vitrine en ligne et vos reçus clients.
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">Identité visuelle du reçu</p>
-                    <p className="text-xs text-gray-500 mt-1">Choisissez une couleur forte et une teinte claire pour personnaliser vos reçus sans changer leur format.</p>
+                    <p className="text-sm font-semibold text-gray-900">Identité visuelle du reçu & vitrine</p>
+                    <p className="text-xs text-gray-500 mt-1">Choisissez une couleur forte et une teinte claire pour personnaliser vos reçus et votre vitrine client sans changer leur format.</p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -709,20 +811,28 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                  <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-xs">
                     <div className="h-3" style={{ backgroundColor: tenantForm.brandPrimaryColor }} />
                     <div className="p-4" style={{ backgroundColor: tenantForm.brandAccentColor }}>
                       <div className="flex items-center gap-3">
-                        <div
-                          className="h-12 w-12 rounded-2xl flex items-center justify-center text-white font-bold shadow-sm"
-                          style={{ backgroundColor: tenantForm.brandPrimaryColor }}
-                        >
-                          {(tenantForm.name || "PP").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("") || "PP"}
-                        </div>
+                        {tenantForm.logoUrl ? (
+                          <img
+                            src={tenantForm.logoUrl}
+                            alt="Logo"
+                            className="h-12 w-12 rounded-2xl object-cover shadow-sm border border-black/10 bg-white"
+                          />
+                        ) : (
+                          <div
+                            className="h-12 w-12 rounded-2xl flex items-center justify-center text-white font-bold shadow-sm"
+                            style={{ backgroundColor: tenantForm.brandPrimaryColor }}
+                          >
+                            {(tenantForm.name || "PP").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("") || "PP"}
+                          </div>
+                        )}
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Aperçu reçu</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Aperçu direct de la marque</p>
                           <p className="text-base font-bold text-gray-900">{tenantForm.name || "Votre pressing"}</p>
-                          <p className="text-xs text-gray-600">La marque du reçu reprendra ces couleurs.</p>
+                          <p className="text-xs text-gray-600">Reçus, vitrine en ligne et simulateur afficheront ces couleurs et votre logo.</p>
                         </div>
                       </div>
                     </div>

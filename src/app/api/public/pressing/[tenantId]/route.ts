@@ -75,6 +75,7 @@ export async function GET(
       },
       orderBy: [
         { sortOrder: "asc" },
+        { isQuickItem: "desc" },
         { name: "asc" },
       ],
     });
@@ -84,10 +85,10 @@ export async function GET(
       services,
     });
 
-    // Cache court (CDN/navigateur 60s, stale-while-revalidate 5 min)
+    // Pas de mise en cache CDN agressive pour garantir la fraîcheur immédiate des tarifs et du logo
     res.headers.set(
       "Cache-Control",
-      "public, s-maxage=60, stale-while-revalidate=300"
+      "no-cache, no-store, max-age=0, must-revalidate"
     );
 
     return res;

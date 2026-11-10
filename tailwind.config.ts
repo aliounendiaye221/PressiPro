@@ -24,6 +24,16 @@ const config: Config = {
           900: "#1e3a8a",
         },
       },
+      boxShadow: {
+        "2xs": "0 1px 1px 0 rgb(0 0 0 / 0.04)",
+        xs: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+      },
+      backdropBlur: {
+        xs: "2px",
+      },
+      borderWidth: {
+        3: "3px",
+      },
     },
   },
   plugins: [forms],

@@ -1,0 +1,8 @@
+# Exemple de configuration de signature pour Google Play Store
+# Copiez ce fichier sous "android/key.properties" et renseignez vos valeurs réelles.
+# Ce fichier est automatiquement ignoré par Git pour sécuriser vos mots de passe.
+
+storeFile=../pressipro-release-key.jks
+storePassword=VotreMotDePasseKeystore
+keyAlias=pressipro
+keyPassword=VotreMotDePasseCle

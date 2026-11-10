@@ -28,7 +28,10 @@ export interface SessionPayload {
 
 export async function createToken(payload: SessionPayload): Promise<string> {
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-  return new SignJWT(payload as unknown as Record<string, unknown>)
+  return new SignJWT({
+    ...(payload as unknown as Record<string, unknown>),
+    typ: "session",
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(exp)
@@ -39,10 +42,15 @@ export async function verifyToken(
   token: string
 ): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, JWT_SECRET, {
+      algorithms: ["HS256"],
+    });
 
-    // Validation structurelle du payload pour éviter qu'un token malformé
-    // ou issu d'une ancienne clé ne soit accepté silencieusement.
+    // Reject receipt-share tokens or non-session tokens (backward-compatible with live sessions without typ)
+    if (payload.typ === "receipt" || payload.orderId !== undefined) {
+      return null;
+    }
+
     if (
       typeof payload.userId !== "string" ||
       typeof payload.tenantId !== "string" ||
@@ -55,7 +63,13 @@ export async function verifyToken(
       return null;
     }
 
-    return payload as unknown as SessionPayload;
+    return {
+      userId: payload.userId,
+      tenantId: payload.tenantId,
+      role: payload.role as Role,
+      email: payload.email,
+      name: payload.name,
+    };
   } catch {
     return null;
   }

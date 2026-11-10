@@ -2,7 +2,13 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { readOfflineCache, removeOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
+import {
+  clearAllOfflineCaches,
+  readOfflineCache,
+  setOfflineTenantScope,
+  writeOfflineCache,
+} from "@/lib/offline-cache";
+import { notifyOfflineQueueScopeChanged } from "@/lib/offline-queue";
 
 interface User {
   id: string;
@@ -52,6 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (res.ok) {
         const data = await res.json();
+        setOfflineTenantScope(data.tenant?.id ?? null);
+        notifyOfflineQueueScopeChanged();
         setUser(data.user);
         setTenant(data.tenant);
         setIsImpersonated(Boolean(data.isImpersonated));
@@ -64,19 +72,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setTenant(null);
         setIsImpersonated(false);
-        removeOfflineCache(AUTH_CACHE_KEY);
+        clearAllOfflineCaches();
+        notifyOfflineQueueScopeChanged();
       } else {
         const cached = readOfflineCache<{
           user: User | null;
           tenant: Tenant | null;
           isImpersonated?: boolean;
         }>(AUTH_CACHE_KEY);
+        setOfflineTenantScope(cached?.data.tenant?.id ?? null);
+        notifyOfflineQueueScopeChanged();
         setUser(cached?.data.user ?? null);
         setTenant(cached?.data.tenant ?? null);
         setIsImpersonated(Boolean(cached?.data.isImpersonated));
       }
     } catch {
       const cached = readOfflineCache<{ user: User | null; tenant: Tenant | null }>(AUTH_CACHE_KEY);
+      setOfflineTenantScope(cached?.data.tenant?.id ?? null);
+      notifyOfflineQueueScopeChanged();
       setUser(cached?.data.user ?? null);
       setTenant(cached?.data.tenant ?? null);
     } finally {
@@ -98,9 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Erreur de connexion");
+    setOfflineTenantScope(data.tenant?.id ?? null);
+    notifyOfflineQueueScopeChanged();
     setUser(data.user);
     setTenant(data.tenant);
-    writeOfflineCache(AUTH_CACHE_KEY, { user: data.user, tenant: data.tenant });
+    setIsImpersonated(false);
+    writeOfflineCache(AUTH_CACHE_KEY, { user: data.user, tenant: data.tenant, isImpersonated: false });
     router.push("/dashboard");
   };
 
@@ -113,23 +129,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Erreur d'inscription");
+    setOfflineTenantScope(data.tenant?.id ?? null);
+    notifyOfflineQueueScopeChanged();
     setUser(data.user);
     setTenant(data.tenant);
-    writeOfflineCache(AUTH_CACHE_KEY, { user: data.user, tenant: data.tenant });
+    setIsImpersonated(false);
+    writeOfflineCache(AUTH_CACHE_KEY, { user: data.user, tenant: data.tenant, isImpersonated: false });
     router.push("/dashboard");
   };
 
   const logout = async () => {
-    await fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-      cache: "no-store",
-    });
-    setUser(null);
-    setTenant(null);
-    setIsImpersonated(false);
-    removeOfflineCache(AUTH_CACHE_KEY);
-    router.push("/login");
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+    } finally {
+      setUser(null);
+      setTenant(null);
+      setIsImpersonated(false);
+      clearAllOfflineCaches();
+      notifyOfflineQueueScopeChanged();
+      router.push("/login");
+    }
   };
 
   const exitImpersonation = async () => {
@@ -140,7 +163,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         cache: "no-store",
       });
       if (res.ok) {
-        removeOfflineCache(AUTH_CACHE_KEY);
+        clearAllOfflineCaches();
+        notifyOfflineQueueScopeChanged();
         window.location.href = "/admin";
       }
     } catch (err) {

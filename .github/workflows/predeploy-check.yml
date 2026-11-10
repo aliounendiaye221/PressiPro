@@ -26,5 +26,17 @@ jobs:
       - name: Validate Prisma schema
         run: npx prisma validate
 
-      - name: Run unit tests
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Lint codebase
+        run: npm run lint
+
+      - name: Run unit & security tests
         run: npm run test
+
+      - name: Build Next.js production bundle
+        env:
+          JWT_SECRET: "ci-build-verification-secret-32-chars-minimum"
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/pressipro_ci?sslmode=disable"
+        run: npx next build

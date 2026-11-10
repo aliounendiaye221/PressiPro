@@ -40,13 +40,12 @@ export async function GET(
       where: { tenantId: session.tenantId },
       select: { id: true, name: true },
     });
-    const userMap = new Map<string, string>(users.map((u: any) => [u.id, u.name]));
+    const userMap = new Map<string, string>(users.map((u) => [u.id, u.name]));
 
-    const enrichedPayments = order.payments.map((p: any) => ({
+    const enrichedPayments = order.payments.map((p) => ({
       ...p,
       agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Système",
     }));
-
 
     return successResponse({
       ...order,
@@ -76,52 +75,71 @@ export async function PUT(
       return errorResponse("Commande introuvable", 404);
     }
 
-    // Only allow editing orders not yet delivered
     if (order.status === "LIVRE") {
       return errorResponse("Impossible de modifier une commande livrée", 400);
     }
 
     const updateData: Prisma.OrderUpdateInput = {};
 
-    // Update notes
     if (data.notes !== undefined) {
       updateData.notes = data.notes || null;
     }
 
-    // Update promisedAt
     if (data.promisedAt !== undefined) {
       updateData.promisedAt = data.promisedAt ? new Date(data.promisedAt) : null;
     }
 
-    // Update items if provided
+    // Cas 1 : Mise à jour des articles (avec ou sans remise)
     if (data.items && data.items.length > 0) {
-      // Verify services belong to tenant
-      const serviceIds = data.items.map((i) => i.serviceId);
+      const uniqueServiceIds = [...new Set(data.items.map((i) => i.serviceId))];
       const services = await prisma.service.findMany({
-        where: { id: { in: serviceIds }, tenantId: session.tenantId, active: true },
+        where: { id: { in: uniqueServiceIds }, tenantId: session.tenantId, active: true },
       });
-      if (services.length !== serviceIds.length) {
-        return errorResponse("Un ou plusieurs services sont invalides", 400);
+      if (services.length !== uniqueServiceIds.length) {
+        return errorResponse("Un ou plusieurs services sont invalides ou désactivés", 400);
       }
 
-      const serviceMap = new Map<string, typeof services[0]>(services.map((s: any) => [s.id, s]));
-      const { items: newItems, itemsTotal: newTotal } = computeOrderItems(data.items, serviceMap);
+      const serviceMap = new Map<string, (typeof services)[0]>(
+        services.map((s) => [s.id, s])
+      );
 
-      // Recalculate discount: use new discount if provided, otherwise keep existing
+      let newItems;
+      let newItemsTotal = 0;
+      try {
+        const computed = computeOrderItems(data.items, serviceMap);
+        newItems = computed.items;
+        newItemsTotal = computed.itemsTotal;
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("VALIDATION:")) {
+          return errorResponse(err.message.replace("VALIDATION:", ""), 400);
+        }
+        throw err;
+      }
+
       const rawDiscount = data.discountAmount ?? order.discountAmount;
-      const { totalAmount: finalTotalAmount, cappedDiscount: discountAmount } = computeFinalTotal(newTotal, rawDiscount);
+      const { totalAmount: finalTotalAmount, cappedDiscount: discountAmount } =
+        computeFinalTotal(newItemsTotal, rawDiscount);
 
-      // Transaction: delete old items, create new, update totals
+      if (finalTotalAmount < order.paidAmount) {
+        return errorResponse(
+          `Le nouveau total (${finalTotalAmount} FCFA) ne peut pas être inférieur au montant déjà encaissé (${order.paidAmount} FCFA).`,
+          400
+        );
+      }
+
       const updated = await prisma.$transaction(async (tx) => {
         const p = tx as typeof prisma;
         await p.orderItem.deleteMany({ where: { orderId: id } });
 
-        const updatedOrder = await p.order.update({
+        return p.order.update({
           where: { id },
           data: {
             ...updateData,
             discountAmount,
-            discountReason: data.discountReason !== undefined ? (data.discountReason || null) : order.discountReason,
+            discountReason:
+              data.discountReason !== undefined
+                ? data.discountReason || null
+                : order.discountReason,
             totalAmount: finalTotalAmount,
             items: { create: newItems },
           },
@@ -132,7 +150,6 @@ export async function PUT(
             statusHistory: { orderBy: { createdAt: "asc" } },
           },
         });
-        return updatedOrder;
       });
 
       await auditLog({
@@ -141,13 +158,34 @@ export async function PUT(
         action: "ORDER_EDITED",
         entity: "Order",
         entityId: id,
-        details: { code: order.code, oldTotal: order.totalAmount, newTotal },
+        details: { code: order.code, oldTotal: order.totalAmount, newTotal: finalTotalAmount },
       });
 
       return successResponse(updated);
     }
 
-    // Simple field updates (notes, promisedAt)
+    // Cas 2 : Mise à jour de la remise seule (sans renvoyer `items`)
+    if (data.discountAmount !== undefined || data.discountReason !== undefined) {
+      const existingItemsSubtotal = order.items.reduce((sum, item) => sum + item.total, 0);
+      const rawDiscount = data.discountAmount ?? order.discountAmount;
+      const { totalAmount: finalTotalAmount, cappedDiscount: discountAmount } =
+        computeFinalTotal(existingItemsSubtotal, rawDiscount);
+
+      if (finalTotalAmount < order.paidAmount) {
+        return errorResponse(
+          `Le nouveau total (${finalTotalAmount} FCFA) ne peut pas être inférieur au montant déjà encaissé (${order.paidAmount} FCFA).`,
+          400
+        );
+      }
+
+      updateData.discountAmount = discountAmount;
+      updateData.totalAmount = finalTotalAmount;
+      if (data.discountReason !== undefined) {
+        updateData.discountReason = data.discountReason || null;
+      }
+    }
+
+    // Cas 3 : Mise à jour des champs simples (notes, promisedAt, et/ou remise seule)
     if (Object.keys(updateData).length > 0) {
       const updated = await prisma.order.update({
         where: { id },
@@ -198,12 +236,13 @@ export async function DELETE(
       return errorResponse("Commande introuvable", 404);
     }
 
-    // Only allow deleting if no payments have been made
-    if (order.paidAmount > 0) {
-      return errorResponse("Impossible de supprimer une commande avec des paiements. Annulez d'abord les paiements.", 400);
+    if (order.paidAmount > 0 || order.payments.length > 0) {
+      return errorResponse(
+        "Impossible de supprimer une commande ayant des paiements. Annulez d'abord les paiements.",
+        400
+      );
     }
 
-    // Update order with deletedAt date (soft delete)
     await prisma.order.update({
       where: { id },
       data: { deletedAt: new Date() },
@@ -231,7 +270,7 @@ export async function DELETE(
           promisedAt: order.promisedAt?.toISOString() || null,
           createdAt: order.createdAt.toISOString(),
           updatedAt: order.updatedAt.toISOString(),
-          items: order.items.map((i: any) => ({
+          items: order.items.map((i) => ({
             id: i.id,
             serviceId: i.serviceId,
             name: i.name,
@@ -241,7 +280,7 @@ export async function DELETE(
             pricingType: i.pricingType,
             total: i.total,
           })),
-          payments: order.payments.map((p: any) => ({
+          payments: order.payments.map((p) => ({
             id: p.id,
             amount: p.amount,
             method: p.method,

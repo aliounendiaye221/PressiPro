@@ -7,7 +7,7 @@
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],
-  "background_color": "#f9fafb",
+  "background_color": "#0f172a",
   "theme_color": "#2563eb",
   "lang": "fr",
   "orientation": "any",
@@ -23,7 +23,13 @@
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [

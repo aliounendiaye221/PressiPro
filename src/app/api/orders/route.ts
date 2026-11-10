@@ -9,6 +9,7 @@ import { PaymentMethod } from "@prisma/client";
 import { parsePagination } from "@/lib/pagination";
 import { warmOrderReceiptPdf } from "@/lib/receipt/pdf";
 import { computeOrderItems, computeFinalTotal } from "@/lib/order-utils";
+import { checkOrderCreationQuota } from "@/lib/subscription-limits";
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,11 +28,9 @@ export async function GET(request: NextRequest) {
       where.status = status;
     }
 
+    // Conserver toutes les commandes non soldées (y compris LIVRE à crédit) dans le suivi des impayés
     if (unpaid) {
       where.paidAmount = { lt: prisma.order.fields.totalAmount };
-      if (!status) {
-        where.status = { not: "LIVRE" };
-      }
     }
 
     if (late) {
@@ -92,6 +91,39 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createOrderSchema.parse(body);
 
+    // Idempotence pour la synchronisation hors-ligne (`clientRequestId`)
+    if (data.clientRequestId) {
+      const existingAudit = await prisma.auditLog.findFirst({
+        where: {
+          tenantId: session.tenantId,
+          action: "ORDER_CREATED",
+          details: { contains: data.clientRequestId },
+        },
+        select: { entityId: true },
+      });
+      if (existingAudit) {
+        const existingOrder = await prisma.order.findFirst({
+          where: {
+            id: existingAudit.entityId,
+            tenantId: session.tenantId,
+            deletedAt: null,
+          },
+          include: {
+            customer: { select: { id: true, name: true, phone: true } },
+            items: true,
+          },
+        });
+        if (existingOrder) {
+          return successResponse(existingOrder, 200);
+        }
+      }
+    }
+
+    const quota = await checkOrderCreationQuota(session.tenantId);
+    if (!quota.allowed) {
+      return errorResponse(quota.message || "Quota de commandes atteint", 403);
+    }
+
     // Verify customer belongs to tenant
     const customer = await prisma.customer.findFirst({
       where: { id: data.customerId, tenantId: session.tenantId },
@@ -100,19 +132,32 @@ export async function POST(request: NextRequest) {
       return errorResponse("Client introuvable", 404);
     }
 
-    // Fetch services and compute total
-    const serviceIds = data.items.map((i) => i.serviceId);
+    // Fetch services and compute total (dédupliquer serviceIds pour supporter plusieurs lignes du même service)
+    const uniqueServiceIds = [...new Set(data.items.map((i) => i.serviceId))];
     const services = await prisma.service.findMany({
-      where: { id: { in: serviceIds }, tenantId: session.tenantId, active: true },
+      where: { id: { in: uniqueServiceIds }, tenantId: session.tenantId, active: true },
     });
 
-    if (services.length !== serviceIds.length) {
-      return errorResponse("Un ou plusieurs services sont invalides", 400);
+    if (services.length !== uniqueServiceIds.length) {
+      return errorResponse("Un ou plusieurs services sont invalides ou désactivés", 400);
     }
 
-    const serviceMap = new Map<string, typeof services[0]>(services.map((s: any) => [s.id, s]));
-    const { items: orderItems, itemsTotal } = computeOrderItems(data.items, serviceMap);
+    const serviceMap = new Map<string, (typeof services)[0]>(
+      services.map((s) => [s.id, s])
+    );
 
+    let orderItems;
+    let itemsTotal = 0;
+    try {
+      const computed = computeOrderItems(data.items, serviceMap);
+      orderItems = computed.items;
+      itemsTotal = computed.itemsTotal;
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("VALIDATION:")) {
+        return errorResponse(err.message.replace("VALIDATION:", ""), 400);
+      }
+      throw err;
+    }
 
     // Handle discount
     const { totalAmount, cappedDiscount: discountAmount } = computeFinalTotal(
@@ -122,9 +167,10 @@ export async function POST(request: NextRequest) {
     const discountReason = data.discountReason || null;
 
     // Determine advance payment
-    const advanceAmount = data.advanceAmount && data.advanceAmount > 0
-      ? Math.min(data.advanceAmount, totalAmount)
-      : 0;
+    const advanceAmount =
+      data.advanceAmount && data.advanceAmount > 0
+        ? Math.min(data.advanceAmount, totalAmount)
+        : 0;
 
     let order;
     let retries = 3;
@@ -159,7 +205,6 @@ export async function POST(request: NextRequest) {
             },
           });
 
-          // Create advance payment if any
           if (advanceAmount > 0) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (tx as any).payment.create({
@@ -185,12 +230,10 @@ export async function POST(request: NextRequest) {
         const target = prismaError.meta?.target;
         const targetText = Array.isArray(target) ? target.join(",") : String(target ?? "");
         const isOrderCodeConflict =
-          prismaError.code === "P2002"
-          && (
-            targetText.length === 0
-            || targetText.includes("Order_tenantId_code_key")
-            || (targetText.includes("tenantId") && targetText.includes("code"))
-          );
+          prismaError.code === "P2002" &&
+          (targetText.length === 0 ||
+            targetText.includes("Order_tenantId_code_key") ||
+            (targetText.includes("tenantId") && targetText.includes("code")));
 
         if (isOrderCodeConflict && retries > 1) {
           retries--;
@@ -210,10 +253,16 @@ export async function POST(request: NextRequest) {
       action: "ORDER_CREATED",
       entity: "Order",
       entityId: order.id,
-      details: { code: order.code, totalAmount, advanceAmount },
+      details: {
+        code: order.code,
+        totalAmount,
+        advanceAmount,
+        ...(data.clientRequestId ? { clientRequestId: data.clientRequestId } : {}),
+      },
     });
 
-    await warmOrderReceiptPdf({
+    // Préchauffage PDF en tâche de fond non bloquante pour accélérer la réponse POS au comptoir
+    void warmOrderReceiptPdf({
       tenantId: session.tenantId,
       orderId: order.id,
     }).catch((error) => {

@@ -2,19 +2,17 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   TrendingUp,
   CalendarDays,
   Calendar,
   AlertTriangle,
-  Banknote,
   Clock,
   CheckCircle2,
   Truck,
   Inbox,
-  CreditCard,
-  Smartphone,
   Wallet,
   WifiOff,
   PlusCircle,
@@ -27,7 +25,10 @@ import {
   Sparkles,
 } from "lucide-react";
 import { formatOfflineCacheTime, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
-import { QrScannerModal } from "@/components/qr-scanner-modal";
+const QrScannerModal = dynamic(
+  () => import("@/components/qr-scanner-modal").then((mod) => mod.QrScannerModal),
+  { ssr: false }
+);
 import { useAuth } from "@/components/auth-provider";
 import { normalizePhoneForWhatsApp } from "@/lib/phone";
 import { DashboardOnboarding } from "@/components/dashboard-onboarding";
@@ -130,13 +131,6 @@ const METHOD_LABELS: Record<string, string> = {
   OM: "Orange Money",
   WAVE: "Wave",
   OTHER: "Autre",
-};
-
-const METHOD_ICONS: Record<string, typeof Wallet> = {
-  CASH: Banknote,
-  OM: Smartphone,
-  WAVE: CreditCard,
-  OTHER: Wallet,
 };
 
 const DASHBOARD_CACHE_KEY = "dashboard:summary";
@@ -387,12 +381,13 @@ export default function DashboardPage() {
         <DashboardOnboarding
           totalOrders={Object.values(data.ordersByStatus).reduce((a, b) => a + b, 0)}
           tenantName={tenant?.name}
+          tenantId={tenant?.id}
           hasWaveOrOm={Boolean(tenant?.waveNumber || tenant?.omNumber)}
           hasExpenses={data.hasExpenses}
         />
 
         {/* 5 Owner Master KPI Cards with Growth Badges & Panier Moyen (100% Mobile Responsive) */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className={`grid gap-3 sm:gap-4 ${isAdmin ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-5" : "grid-cols-1 sm:grid-cols-2"}`}>
           {/* 1. CA Jour */}
           <Link
             href="/orders?period=today"
@@ -421,7 +416,8 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          {/* 2. CA Semaine */}
+          {/* 2. CA Semaine (Propriétaire / Admin uniquement) */}
+          {isAdmin && (
           <Link
             href="/orders?period=week"
             className="card-levitate glow-card bg-gradient-to-br from-primary-50/40 dark:from-primary-950/20 via-white dark:via-slate-900 to-white dark:to-slate-900 relative overflow-hidden block transition-all hover:scale-[1.02] active:scale-[0.98] group"
@@ -473,8 +469,10 @@ export default function DashboardPage() {
               </div>
             </div>
           </Link>
+          )}
 
-          {/* 3. CA Mois */}
+          {/* 3. CA Mois (Propriétaire / Admin uniquement) */}
+          {isAdmin && (
           <Link
             href={isAdmin ? "/expenses" : "/orders?period=month"}
             className="card-levitate glow-card glow-card-violet bg-gradient-to-br from-violet-50/40 dark:from-violet-950/20 via-white dark:via-slate-900 to-white dark:to-slate-900 relative overflow-hidden block transition-all hover:scale-[1.02] active:scale-[0.98] group"
@@ -508,8 +506,10 @@ export default function DashboardPage() {
               )}
             </div>
           </Link>
+          )}
 
           {/* 4. Panier Moyen (Owner KPI) */}
+          {isAdmin && (
           <div
             className="card-levitate glow-card glow-card-amber bg-gradient-to-br from-amber-50/40 dark:from-amber-950/20 via-white dark:via-slate-900 to-white dark:to-slate-900 relative overflow-hidden block transition-all hover:scale-[1.02] active:scale-[0.98] group"
             title="Panier moyen par commande ce mois-ci"
@@ -537,6 +537,7 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
+          )}
 
           {/* 5. Impayés (Spans 2 cols on mobile, 1 col on desktop) */}
           <Link
@@ -642,11 +643,13 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* 2026 Modern Spline Interactive Chart */}
-        <ModernAreaChart
-          dailyRevenue={data.weeklyDailyRevenue || []}
-          dailyOrders={data.weeklyDailyOrders || []}
-        />
+        {/* 2026 Modern Spline Interactive Chart (Owner / Admin only) */}
+        {isAdmin && (
+          <ModernAreaChart
+            dailyRevenue={data.weeklyDailyRevenue || []}
+            dailyOrders={data.weeklyDailyOrders || []}
+          />
+        )}
 
         {/* Section Propriétaire : Top 5 Services du Mois & Paiements du Jour (100% Mobile Responsive) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">

@@ -69,7 +69,7 @@ export default function OgImage() {
         <div
           style={{
             fontSize: "20px",
-            color: "rgba(255,255,255,0.7)",
+            color: "rgba(255,255,255,0.75)",
             marginTop: "20px",
             textAlign: "center",
             maxWidth: "700px",
@@ -94,7 +94,7 @@ export default function OgImage() {
               fontWeight: 700,
             }}
           >
-            Essai gratuit — pressipro.tech
+            Démarrage gratuit — pressipro.vercel.app
           </div>
         </div>
       </div>

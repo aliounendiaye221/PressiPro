@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/rbac";
 import { handleApiError, successResponse } from "@/lib/api-utils";
+import { SUBSCRIPTION_PLANS, type PlanKey } from "@/lib/subscription-plans";
 
 export async function GET() {
   try {
@@ -9,11 +10,11 @@ export async function GET() {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
-    // Last 30 days for daily revenue chart
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const activeOrderFilter = { deletedAt: null };
 
     const [
       totalTenants,
@@ -21,8 +22,8 @@ export async function GET() {
       activeUsers,
       totalOrders,
       totalCustomers,
-      mrrCurrent,
-      mrrPrevious,
+      gmvCurrent,
+      gmvPrevious,
       totalRevenue,
       recentPayments,
       tenants,
@@ -30,6 +31,9 @@ export async function GET() {
       ordersByStatus,
       ordersThisMonth,
       ordersPrevMonth,
+      tenantRevenuesMonth,
+      tenantRevenuesAll,
+      dailyPayments,
     ] = await Promise.all([
       prisma.tenant.count(),
       prisma.user.count(),
@@ -37,15 +41,22 @@ export async function GET() {
       prisma.order.count({ where: { deletedAt: null } }),
       prisma.customer.count(),
       prisma.payment.aggregate({
-        where: { createdAt: { gte: startOfMonth } },
+        where: { createdAt: { gte: startOfMonth }, order: activeOrderFilter },
         _sum: { amount: true },
       }),
       prisma.payment.aggregate({
-        where: { createdAt: { gte: startOfPrevMonth, lte: endOfPrevMonth } },
+        where: {
+          createdAt: { gte: startOfPrevMonth, lt: startOfMonth },
+          order: activeOrderFilter,
+        },
         _sum: { amount: true },
       }),
-      prisma.payment.aggregate({ _sum: { amount: true } }),
+      prisma.payment.aggregate({
+        where: { order: activeOrderFilter },
+        _sum: { amount: true },
+      }),
       prisma.payment.findMany({
+        where: { order: activeOrderFilter },
         include: {
           order: {
             select: {
@@ -65,16 +76,21 @@ export async function GET() {
           phone: true,
           active: true,
           subscription: true,
+          subscriptionExpiresAt: true,
           createdAt: true,
           _count: {
-            select: { users: true, orders: true, customers: true },
+            select: {
+              users: true,
+              orders: { where: { deletedAt: null } },
+              customers: true,
+            },
           },
         },
         orderBy: { createdAt: "desc" },
       }),
       prisma.payment.groupBy({
         by: ["method"],
-        where: { createdAt: { gte: startOfMonth } },
+        where: { createdAt: { gte: startOfMonth }, order: activeOrderFilter },
         _sum: { amount: true },
         _count: true,
       }),
@@ -83,36 +99,38 @@ export async function GET() {
         where: { deletedAt: null },
         _count: true,
       }),
-      prisma.order.count({ where: { createdAt: { gte: startOfMonth }, deletedAt: null } }),
-      prisma.order.count({ where: { createdAt: { gte: startOfPrevMonth, lte: endOfPrevMonth }, deletedAt: null } }),
-    ]);
-
-    // Per-tenant revenue this month + all-time
-    const [tenantRevenuesMonth, tenantRevenuesAll] = await Promise.all([
+      prisma.order.count({
+        where: { createdAt: { gte: startOfMonth }, deletedAt: null },
+      }),
+      prisma.order.count({
+        where: {
+          createdAt: { gte: startOfPrevMonth, lt: startOfMonth },
+          deletedAt: null,
+        },
+      }),
       prisma.payment.groupBy({
         by: ["tenantId"],
-        where: { createdAt: { gte: startOfMonth } },
+        where: { createdAt: { gte: startOfMonth }, order: activeOrderFilter },
         _sum: { amount: true },
       }),
       prisma.payment.groupBy({
         by: ["tenantId"],
+        where: { order: activeOrderFilter },
         _sum: { amount: true },
+      }),
+      prisma.payment.findMany({
+        where: { createdAt: { gte: thirtyDaysAgo }, order: activeOrderFilter },
+        select: { amount: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
       }),
     ]);
 
     const revenueByTenantMonth = Object.fromEntries(
-      tenantRevenuesMonth.map((r: { tenantId: string; _sum: { amount: number | null } }) => [r.tenantId, r._sum.amount || 0])
+      tenantRevenuesMonth.map((r) => [r.tenantId, r._sum.amount || 0])
     );
     const revenueByTenantAll = Object.fromEntries(
-      tenantRevenuesAll.map((r: { tenantId: string; _sum: { amount: number | null } }) => [r.tenantId, r._sum.amount || 0])
+      tenantRevenuesAll.map((r) => [r.tenantId, r._sum.amount || 0])
     );
-
-    // Daily revenue for the last 30 days
-    const dailyPayments = await prisma.payment.findMany({
-      where: { createdAt: { gte: thirtyDaysAgo } },
-      select: { amount: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
-    });
 
     const dailyRevenueMap: Record<string, number> = {};
     for (const p of dailyPayments) {
@@ -128,19 +146,27 @@ export async function GET() {
       dailyRevenue.push({ date: key, amount: dailyRevenueMap[key] || 0 });
     }
 
-    // Average order value
-    const avgOrderValue = totalOrders > 0
-      ? Math.round((totalRevenue._sum.amount || 0) / totalOrders)
-      : 0;
+    const avgOrderValue =
+      totalOrders > 0 ? Math.round((totalRevenue._sum.amount || 0) / totalOrders) : 0;
 
-    const currentMRR = mrrCurrent._sum.amount || 0;
-    const previousMRR = mrrPrevious._sum.amount || 0;
-    const mrrGrowth = previousMRR > 0
-      ? Math.round(((currentMRR - previousMRR) / previousMRR) * 100)
-      : 0;
+    const currentGMV = gmvCurrent._sum.amount || 0;
+    const previousGMV = gmvPrevious._sum.amount || 0;
+    const gmvGrowth =
+      previousGMV > 0 ? Math.round(((currentGMV - previousGMV) / previousGMV) * 100) : 0;
+
+    // Calcul du vrai MRR SaaS récurrent à partir des abonnements actifs non expirés
+    const saasMrr = tenants.reduce((sum, t) => {
+      if (!t.active) return sum;
+      const planKey = (t.subscription || "FREE") as PlanKey;
+      if (planKey === "FREE" || !SUBSCRIPTION_PLANS[planKey]) return sum;
+      if (t.subscriptionExpiresAt && t.subscriptionExpiresAt.getTime() < now.getTime()) {
+        return sum;
+      }
+      return sum + SUBSCRIPTION_PLANS[planKey].monthlyPrice;
+    }, 0);
 
     const orderStatusMap = Object.fromEntries(
-      ordersByStatus.map((s: { status: string; _count: number }) => [s.status, s._count])
+      ordersByStatus.map((s) => [s.status, s._count])
     );
 
     const saasRows = (await prisma.$queryRaw`
@@ -173,8 +199,9 @@ export async function GET() {
         activeUsers,
         totalOrders,
         totalCustomers,
-        mrr: currentMRR,
-        mrrGrowth,
+        mrr: currentGMV,
+        mrrGrowth: gmvGrowth,
+        saasMrr,
         totalRevenue: totalRevenue._sum.amount || 0,
         saasTotalRevenue: saasRows?.[0]?.total || 0,
         avgOrderValue,
@@ -188,12 +215,13 @@ export async function GET() {
         LIVRE: orderStatusMap["LIVRE"] || 0,
       },
       dailyRevenue,
-      tenants: tenants.map((t: any) => ({
+      tenants: tenants.map((t) => ({
         id: t.id,
         name: t.name,
         phone: t.phone,
         active: t.active,
         subscription: t.subscription,
+        subscriptionExpiresAt: t.subscriptionExpiresAt,
         createdAt: t.createdAt,
         users: t._count.users,
         orders: t._count.orders,
@@ -201,7 +229,7 @@ export async function GET() {
         revenue: revenueByTenantMonth[t.id] || 0,
         totalRevenue: revenueByTenantAll[t.id] || 0,
       })),
-      recentPayments: recentPayments.map((p: any) => ({
+      recentPayments: recentPayments.map((p) => ({
         id: p.id,
         amount: p.amount,
         method: p.method,
@@ -211,7 +239,7 @@ export async function GET() {
         createdAt: p.createdAt,
       })),
       subscriptionPayments: saasPayments || [],
-      paymentsByMethod: paymentsByMethod.map((p: { method: string; _sum: { amount: number | null }; _count: number }) => ({
+      paymentsByMethod: paymentsByMethod.map((p) => ({
         method: p.method,
         total: p._sum.amount || 0,
         count: p._count,

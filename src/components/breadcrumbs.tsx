@@ -21,6 +21,7 @@ const ROUTE_LABELS: Record<string, string> = {
   caisse: "Journal de Caisse",
   expenses: "Dépenses & Bilan",
   customers: "Clients",
+  subscription: "Mon Abonnement",
   settings: "Paramètres",
   admin: "Admin SaaS",
   share: "Reçu partagé",

@@ -1,20 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { auditLog } from "@/lib/audit";
-import { verifyWaveWebhookSignature, WaveWebhookEvent, WaveCheckoutSession } from "@/lib/wave";
-import { findSubscriptionPayment, activateSubscriptionFromWave } from "@/lib/subscription-billing";
+import { verifyWaveWebhookSignature, WaveWebhookEvent } from "@/lib/wave";
+import {
+  findSubscriptionPayment,
+  activateSubscriptionFromWave,
+} from "@/lib/subscription-billing";
+import {
+  resolveOrderForTransaction,
+  recordOnlineOrderPayment,
+} from "@/lib/order-payment-reconcile";
 
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text();
     const signatureHeader = request.headers.get("wave-signature");
-
-    // Vérification de la signature HMAC-SHA256 si WAVE_WEBHOOK_SECRET est défini
     const webhookSecret = process.env.WAVE_WEBHOOK_SECRET;
-    if (webhookSecret) {
+
+    // Fail-closed en production : refuser tout webhook non signé si le secret n'est pas configuré
+    if (!webhookSecret) {
+      if (process.env.NODE_ENV === "production") {
+        console.error("[Wave Webhook] WAVE_WEBHOOK_SECRET manquant en production");
+        return NextResponse.json(
+          { error: "Webhook secret not configured" },
+          { status: 503 }
+        );
+      }
+    } else {
       const isValid = verifyWaveWebhookSignature(signatureHeader, rawBody, webhookSecret);
       if (!isValid) {
-        console.warn("[Wave Webhook] Signature invalide");
+        console.warn("[Wave Webhook] Signature invalide ou expirée");
         return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
       }
     }
@@ -33,15 +46,13 @@ export async function POST(request: NextRequest) {
     }
 
     const ref = session.client_reference;
-    console.log(`[Wave Webhook] Événement '${type}' reçu pour ref: ${ref}, status: ${session.payment_status}`);
 
     if (type === "checkout.session.completed" && session.payment_status === "succeeded") {
       // 1. Cas Abonnement SaaS PressiPro (SUB-...)
       if (ref.startsWith("SUB-")) {
         const sub = await findSubscriptionPayment(ref);
         if (sub) {
-          const res = await activateSubscriptionFromWave(sub, session, "webhook");
-          console.log(`[Wave Webhook] Activation abonnement ${ref}:`, res);
+          await activateSubscriptionFromWave(sub, session, "webhook");
         } else {
           console.warn(`[Wave Webhook] SubscriptionPayment introuvable pour ref: ${ref}`);
         }
@@ -50,67 +61,25 @@ export async function POST(request: NextRequest) {
 
       // 2. Cas Paiement Commande Pressing (PPO-...)
       if (ref.startsWith("PPO-")) {
-        const parts = ref.split("-");
-        const orderCode = parts[1];
-
-        if (orderCode) {
-          const order = await prisma.order.findFirst({
-            where: { code: orderCode, deletedAt: null },
-            include: { payments: { select: { note: true } } },
+        const order = await resolveOrderForTransaction(ref);
+        if (order) {
+          const amountPaid = Math.round(Number(session.amount) || 0);
+          const waveTxId = session.transaction_id || session.id;
+          await recordOnlineOrderPayment({
+            orderId: order.id,
+            tenantId: order.tenantId,
+            transactionId: ref,
+            amountPaid,
+            method: "WAVE",
+            note: `Paiement en ligne Wave (Réf Wave: ${waveTxId}) - Réf: ${ref}`,
+            auditProvider: "WAVE_WEBHOOK",
+            auditExtra: {
+              waveSessionId: session.id,
+              waveTxId,
+            },
           });
-
-          if (order) {
-            const alreadyRecorded = order.payments.some((p: { note?: string | null }) =>
-              p.note?.includes(ref) || (session.transaction_id && p.note?.includes(session.transaction_id))
-            );
-
-            if (!alreadyRecorded) {
-              const amountPaid = Math.round(Number(session.amount));
-              const remaining = Math.max(0, order.totalAmount - order.paidAmount);
-              const toRecord = Math.min(amountPaid, remaining);
-
-              if (toRecord > 0) {
-                const waveTxId = session.transaction_id || session.id;
-                const note = `Paiement en ligne Wave (Réf Wave: ${waveTxId}) - Réf: ${ref}`;
-
-                await prisma.$transaction(async (tx) => {
-                  await tx.payment.create({
-                    data: {
-                      tenantId: order.tenantId,
-                      orderId: order.id,
-                      amount: toRecord,
-                      method: "WAVE",
-                      note,
-                    },
-                  });
-
-                  await tx.order.update({
-                    where: { id: order.id },
-                    data: {
-                      paidAmount: { increment: toRecord },
-                    },
-                  });
-                });
-
-                await auditLog({
-                  tenantId: order.tenantId,
-                  action: "PAYMENT_CREATED",
-                  entity: "Payment",
-                  entityId: order.id,
-                  details: {
-                    provider: "WAVE_WEBHOOK",
-                    transactionId: ref,
-                    waveSessionId: session.id,
-                    waveTxId,
-                    amount: toRecord,
-                    paymentMethod: "WAVE",
-                  },
-                });
-
-                console.log(`[Wave Webhook] Paiement commande ${order.code} enregistré avec succès (${toRecord} FCFA)`);
-              }
-            }
-          }
+        } else {
+          console.warn(`[Wave Webhook] Commande introuvable ou ambiguë pour ref: ${ref}`);
         }
 
         return NextResponse.json({ received: true, type: "order" }, { status: 200 });

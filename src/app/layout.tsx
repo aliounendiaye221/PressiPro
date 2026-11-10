@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { RegisterSW } from "@/components/register-sw";
+import { MobileAppBridge } from "@/components/mobile-app-bridge";
 import "./globals.css";
 
-const SITE_URL = "https://pressipro.tech";
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://pressipro.vercel.app";
 
 export const metadata: Metadata = {
   title: {
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
     template: "%s | PressiPro",
   },
   description:
-    "PressiPro est le logiciel SaaS #1 de gestion de pressing au Sénégal. Commandes, paiements Wave/OM, reçus PDF, dashboard temps réel. Essai gratuit.",
+    "PressiPro est le logiciel SaaS #1 de gestion de pressing au Sénégal. Commandes, paiements Wave/OM, reçus PDF, dashboard temps réel. Offre gratuite disponible.",
   keywords: [
     "gestion pressing",
     "logiciel pressing",
@@ -39,10 +40,10 @@ export const metadata: Metadata = {
     siteName: "PressiPro",
     title: "PressiPro — Logiciel de Gestion de Pressing au Sénégal",
     description:
-      "Digitalisez votre pressing en 30 secondes. Commandes, paiements, reçus PDF, statistiques — tout sur votre téléphone. Essai gratuit, sans carte bancaire.",
+      "Digitalisez votre pressing en 30 secondes. Commandes, paiements, reçus PDF, statistiques — tout sur votre téléphone. Démarrage gratuit, sans carte bancaire.",
     images: [
       {
-        url: "/og-image.png",
+        url: "/opengraph-image",
         width: 1200,
         height: 630,
         alt: "PressiPro — Gestion de Pressing",
@@ -53,8 +54,8 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "PressiPro — Logiciel de Gestion de Pressing au Sénégal",
     description:
-      "Digitalisez votre pressing en 30 secondes. Commandes, paiements, reçus PDF, statistiques. Essai gratuit.",
-    images: ["/og-image.png"],
+      "Digitalisez votre pressing en 30 secondes. Commandes, paiements, reçus PDF, statistiques. Démarrage gratuit.",
+    images: ["/opengraph-image"],
   },
   robots: {
     index: true,
@@ -92,6 +93,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
   themeColor: "#2563eb",
 };
 
@@ -105,7 +107,7 @@ export default function RootLayout({
     "@type": "SoftwareApplication",
     name: "PressiPro",
     applicationCategory: "BusinessApplication",
-    operatingSystem: "Web",
+    operatingSystem: "Web, Android, iOS",
     url: SITE_URL,
     description:
       "Logiciel SaaS de gestion de pressing au Sénégal. Commandes, paiements Wave/OM, reçus PDF, dashboard.",
@@ -113,7 +115,7 @@ export default function RootLayout({
       "@type": "Offer",
       price: "0",
       priceCurrency: "XOF",
-      description: "Essai gratuit 14 jours",
+      description: "Formule Découverte gratuite jusqu'à 50 commandes",
     },
     author: {
       "@type": "Person",
@@ -176,6 +178,7 @@ export default function RootLayout({
       </head>
       <body>
         <RegisterSW />
+        <MobileAppBridge />
         {children}
       </body>
     </html>

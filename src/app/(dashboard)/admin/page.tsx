@@ -237,7 +237,8 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (user && user.role !== "SUPER_ADMIN") {
+    if (!user) return;
+    if (user.role !== "SUPER_ADMIN") {
       router.push("/dashboard");
       return;
     }

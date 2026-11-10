@@ -141,6 +141,10 @@ export default function ExpensesPage() {
   };
 
   const loadData = useCallback(async () => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       // 1. Load summary
@@ -167,7 +171,7 @@ export default function ExpensesPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth, categoryFilter, search]);
+  }, [isAdmin, selectedMonth, categoryFilter, search]);
 
   useEffect(() => {
     loadData();
@@ -204,10 +208,10 @@ export default function ExpensesPage() {
     const headers = ["Date", "Description", "Catégorie", "Moyen de Règlement", "Fournisseur", "Montant (FCFA)"];
     const rows = expenses.map((e) => [
       `"${new Date(e.date).toLocaleDateString("fr-SN")}"`,
-      `"${e.description.replace(/"/g, '""')}"`,
+      `"${(/^[=+\-@\t\r]/.test(e.description) ? `'${e.description}` : e.description).replace(/"/g, '""')}"`,
       `"${CATEGORY_LABELS[e.category]?.label || e.category}"`,
       `"${PAYMENT_LABELS[e.paymentMethod] || e.paymentMethod}"`,
-      `"${(e.supplier || "").replace(/"/g, '""')}"`,
+      `"${(/^[=+\-@\t\r]/.test(e.supplier || "") ? `'${e.supplier || ""}` : (e.supplier || "")).replace(/"/g, '""')}"`,
       e.amount,
     ]);
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\n");

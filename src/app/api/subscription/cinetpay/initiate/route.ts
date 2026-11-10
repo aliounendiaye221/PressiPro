@@ -4,10 +4,18 @@ import { requireAdmin } from "@/lib/rbac";
 import { handleApiError, errorResponse, successResponse } from "@/lib/api-utils";
 import { getPlanPrice, PlanKey, BillingCycle, SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
 import { initiateCinetPayPayment } from "@/lib/cinetpay";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 export async function POST(request: NextRequest) {
   try {
     const session = await requireAdmin();
+    const ip = getClientIp(request);
+    const rate = await checkRateLimit(`sub:cinetpay:init:${session.tenantId}:${ip}`, 15, 5 * 60 * 1000);
+    if (!rate.allowed) {
+      return errorResponse("Trop de tentatives. Veuillez patienter quelques instants.", 429);
+    }
+
     const body = await request.json().catch(() => ({}));
 
     const plan = (body.plan || "PRO") as PlanKey;
@@ -16,13 +24,15 @@ export async function POST(request: NextRequest) {
     if (!SUBSCRIPTION_PLANS[plan] || plan === "FREE") {
       return errorResponse("Plan d'abonnement sélectionné invalide", 400);
     }
+    if (cycle !== "monthly" && cycle !== "yearly") {
+      return errorResponse("Cycle de facturation invalide", 400);
+    }
 
     const amount = getPlanPrice(plan, cycle);
     if (amount <= 0) {
       return errorResponse("Montant d'abonnement invalide", 400);
     }
 
-    // Récupérer le tenant et l'utilisateur
     const tenant = await prisma.tenant.findUnique({
       where: { id: session.tenantId },
       select: { id: true, name: true, phone: true },
@@ -37,22 +47,20 @@ export async function POST(request: NextRequest) {
       return errorResponse("Tenant introuvable", 404);
     }
 
-    // ID de transaction unique pour l'abonnement
     const rand = Math.floor(1000 + Math.random() * 9000);
     const cleanTenant = tenant.id.replace(/[^a-zA-Z0-9]/g, "").slice(-6);
     const transactionId = `SUB-${cleanTenant}-${Date.now().toString().slice(-6)}${rand}`;
 
     const origin = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
     const notifyUrl = `${origin}/api/webhooks/cinetpay`;
-    const returnUrl = `${origin}/subscription?payment=return&tx=${transactionId}`;
+    const returnUrl = `${origin}/subscription?payment=return&provider=cinetpay&tx=${encodeURIComponent(transactionId)}`;
 
-    // Enregistrer l'intention de paiement dans SubscriptionPayment
     await prisma.$queryRaw`
       INSERT INTO "SubscriptionPayment" ("id", "tenantId", "plan", "amount", "transactionId", "status", "createdAt", "updatedAt")
       VALUES (${`sp_${transactionId}`}, ${tenant.id}, ${plan}, ${amount}, ${transactionId}, 'PENDING', NOW(), NOW())
     `;
 
-    // Appel CinetPay unifié (avec gestion automatique moderne, legacy et simulation)
+    // Ne PAS passer tenantId ici : l'abonnement SaaS est encaissé par la plateforme PressiPro
     const result = await initiateCinetPayPayment({
       amount,
       orderId: `sp_${transactionId}`,
@@ -60,7 +68,6 @@ export async function POST(request: NextRequest) {
       customerName: user?.name || tenant.name,
       customerPhone: tenant.phone,
       customerEmail: user?.email,
-      tenantId: tenant.id,
       tenantName: tenant.name,
       notifyUrl,
       returnUrl,

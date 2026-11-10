@@ -19,11 +19,11 @@ export default function OfflinePage() {
               Mode hors connexion
             </p>
             <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
-              PressiPro reste accessible, meme sans reseau.
+              PressiPro reste accessible, même sans réseau.
             </h1>
             <p className="text-base leading-7 text-slate-200 sm:text-lg">
-              Certaines pages deja ouvertes et les ressources principales restent disponibles.
-              Reconnectez-vous pour synchroniser les donnees en ligne et acceder aux appels API.
+              Certaines pages déjà ouvertes et les ressources principales restent disponibles.
+              Reconnectez-vous pour synchroniser les données en ligne et accéder aux appels API.
             </p>
           </div>
 
@@ -34,7 +34,7 @@ export default function OfflinePage() {
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-950/30 transition-transform duration-200 hover:-translate-y-0.5"
             >
               <RefreshCw className="h-4 w-4" />
-              Reessayer
+              Réessayer
             </button>
             <Link
               href="/dashboard"
@@ -55,15 +55,15 @@ export default function OfflinePage() {
           <div className="mt-8 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
               <p className="font-semibold text-white">Disponible</p>
-              <p className="mt-1">Navigation locale, icones, shell applicatif.</p>
+              <p className="mt-1">Navigation locale, icônes, shell applicatif.</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
               <p className="font-semibold text-white">Limite</p>
-              <p className="mt-1">Les appels API et les nouvelles donnees exigent Internet.</p>
+              <p className="mt-1">Les appels API et les nouvelles données exigent Internet.</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
               <p className="font-semibold text-white">Conseil</p>
-              <p className="mt-1">Installez l&apos;app pour un acces plus rapide depuis le bureau ou l&apos;accueil.</p>
+              <p className="mt-1">Installez l&apos;app pour un accès plus rapide depuis le bureau ou l&apos;accueil.</p>
             </div>
           </div>
         </section>

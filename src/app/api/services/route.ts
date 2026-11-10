@@ -10,7 +10,7 @@ export async function GET() {
     const session = await requireTenantSession();
     const services = await prisma.service.findMany({
       where: { tenantId: session.tenantId, active: true },
-      orderBy: [{ name: "asc" }],
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
     return successResponse(services);
   } catch (error) {
@@ -23,18 +23,36 @@ export async function POST(request: NextRequest) {
     const session = await requireAdmin();
     const body = await request.json();
     const data = serviceSchema.parse(body);
+    const trimmedName = data.name.trim();
 
     const existing = await prisma.service.findUnique({
-      where: { tenantId_name: { tenantId: session.tenantId, name: data.name } },
+      where: { tenantId_name: { tenantId: session.tenantId, name: trimmedName } },
     });
+
     if (existing) {
-      return errorResponse("Un service avec ce nom existe déjà", 409);
+      if (existing.active) {
+        return errorResponse("Un service actif avec ce nom existe déjà", 409);
+      }
+
+      // Réactiver proprement un service précédemment désactivé portant le même nom
+      const reactivated = await prisma.service.update({
+        where: { id: existing.id },
+        data: {
+          active: true,
+          price: data.price,
+          pricingType: data.pricingType || existing.pricingType || "PER_ITEM",
+          category: data.category || null,
+          isQuickItem: data.isQuickItem ?? existing.isQuickItem,
+          sortOrder: data.sortOrder ?? existing.sortOrder,
+        },
+      });
+      return successResponse(reactivated, 201);
     }
 
     const service = await prisma.service.create({
       data: {
         tenantId: session.tenantId,
-        name: data.name,
+        name: trimmedName,
         price: data.price,
         pricingType: data.pricingType || "PER_ITEM",
         category: data.category || null,

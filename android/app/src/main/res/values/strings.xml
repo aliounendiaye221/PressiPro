@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PressiPro</string>
+    <string name="title_activity_main">PressiPro</string>
+    <string name="package_name">com.pressipro.app</string>
+    <string name="custom_url_scheme">com.pressipro.app</string>
+</resources>

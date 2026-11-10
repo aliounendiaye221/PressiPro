@@ -40,7 +40,7 @@ Cependant, l'audit met en évidence **une fuite critique de secret de base de do
   ```javascript
   const DATABASE_URL =
     process.env.DATABASE_URL ||
-    'postgresql://neondb_owner:npg_H7kBYAQ9XfTS@ep-summer-surf-ahsp02zb-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require';
+    'postgresql://neondb_owner:<REDACTED_ROTATE_IN_NEON_CONSOLE>@ep-summer-surf-ahsp02zb-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require';
   ```
   Le mot de passe de l'utilisateur `neondb_owner` est codé en dur en valeur de secours. Si ce code est poussé sur GitHub (public ou privé partagé), tout tiers a un accès administrateur total sur la base de données.
 - **Recommandation immédiate** :

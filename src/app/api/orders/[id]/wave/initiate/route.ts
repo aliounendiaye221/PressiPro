@@ -2,8 +2,9 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireTenantSession } from "@/lib/tenant";
 import { createReceiptShareToken } from "@/lib/receipt-share";
-import { createWaveCheckoutSession, isWaveConfigured, WaveApiError } from "@/lib/wave";
+import { createWaveCheckoutSession, isWaveConfigured } from "@/lib/wave";
 import { generateTransactionId } from "@/lib/cinetpay";
+import { normalizeSafeWaveMerchantUrl } from "@/lib/order-payment-reconcile";
 import { errorResponse, successResponse, handleApiError } from "@/lib/api-utils";
 
 export async function POST(
@@ -45,25 +46,18 @@ export async function POST(
       tenantId: order.tenantId,
     });
 
-    const transactionId = generateTransactionId(order.code);
+    const transactionId = generateTransactionId(order.code, {
+      tenantId: order.tenantId,
+      orderId: order.id,
+    });
     const origin = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-    const successUrl = `${origin}/share/receipt/${token}?payment=return&provider=wave&tx=${transactionId}`;
-    const errorUrl = `${origin}/share/receipt/${token}?payment=error&provider=wave&tx=${transactionId}`;
+    const successUrl = `${origin}/share/receipt/${token}?payment=return&provider=wave&tx=${encodeURIComponent(transactionId)}`;
+    const errorUrl = `${origin}/share/receipt/${token}?payment=error&provider=wave&tx=${encodeURIComponent(transactionId)}`;
     const receiptShareUrl = `${origin}/share/receipt/${token}`;
 
-    let directPaymentUrl: string | null = null;
+    let directPaymentUrl: string | null = normalizeSafeWaveMerchantUrl(order.tenant.waveNumber);
 
-    // 1. Si le pressing a configuré son propre lien Wave Business Marchand (ex: pay.wave.com/m/...)
-    const tenantWave = (order.tenant.waveNumber || "").trim();
-    const isWaveUrl =
-      tenantWave.startsWith("http://") ||
-      tenantWave.startsWith("https://") ||
-      tenantWave.includes("pay.wave.com") ||
-      tenantWave.includes("wave.com");
-
-    if (isWaveUrl) {
-      directPaymentUrl = tenantWave.startsWith("http") ? tenantWave : `https://${tenantWave}`;
-    } else if (isWaveConfigured()) {
+    if (!directPaymentUrl && isWaveConfigured()) {
       try {
         const waveSession = await createWaveCheckoutSession({
           amount: amountDue,
@@ -74,7 +68,10 @@ export async function POST(
         });
         directPaymentUrl = waveSession.wave_launch_url;
       } catch (waveErr) {
-        console.warn("[Wave Order Checkout Warning]", waveErr instanceof Error ? waveErr.message : waveErr);
+        console.warn(
+          "[Wave Order Checkout Warning]",
+          waveErr instanceof Error ? waveErr.message : waveErr
+        );
       }
     }
 

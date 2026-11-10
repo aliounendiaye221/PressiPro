@@ -3,18 +3,33 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 import { handleApiError, errorResponse, successResponse } from "@/lib/api-utils";
 import { getPlanPrice, PlanKey, BillingCycle, SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
-import { createWaveCheckoutSession, isWaveConfigured, WaveApiError } from "@/lib/wave";
+import { createWaveCheckoutSession, isWaveConfigured } from "@/lib/wave";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 export async function POST(request: NextRequest) {
   try {
     const session = await requireAdmin();
+
+    const ip = getClientIp(request);
+    const rl = await checkRateLimit(`sub-wave-init:${session.tenantId}:${ip}`, {
+      limit: 10,
+      windowSeconds: 60,
+    });
+    if (!rl.allowed) {
+      return errorResponse("Trop de tentatives. Veuillez patienter une minute.", 429);
+    }
+
     const body = await request.json().catch(() => ({}));
 
     const plan = (body.plan || "PRO") as PlanKey;
     const cycle = (body.cycle || "monthly") as BillingCycle;
 
-    if (!SUBSCRIPTION_PLANS[plan] || plan === "FREE") {
+    if (!["BASIC", "PRO", "ENTERPRISE"].includes(plan) || !SUBSCRIPTION_PLANS[plan]) {
       return errorResponse("Plan d'abonnement sélectionné invalide", 400);
+    }
+    if (!["monthly", "yearly"].includes(cycle)) {
+      return errorResponse("Cycle de facturation invalide", 400);
     }
 
     const amount = getPlanPrice(plan, cycle);
@@ -25,11 +40,6 @@ export async function POST(request: NextRequest) {
     const tenant = await prisma.tenant.findUnique({
       where: { id: session.tenantId },
       select: { id: true, name: true, phone: true },
-    });
-
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { name: true, email: true },
     });
 
     if (!tenant) {
@@ -71,12 +81,16 @@ export async function POST(request: NextRequest) {
           provider: "WAVE",
         });
       } catch (waveErr) {
-        console.warn("[Wave Subscription Checkout Warning]", waveErr instanceof Error ? waveErr.message : waveErr);
+        console.warn(
+          "[Wave Subscription Checkout Warning]",
+          waveErr instanceof Error ? waveErr.message : waveErr
+        );
       }
     }
 
     // 2. Lien Wave Business officiel réel de la plateforme PressiPro
-    const platformWaveUrl = process.env.PLATFORM_WAVE_URL || "https://pay.wave.com/m/M_sn_3em1Iu3-fUxZ/c/sn/";
+    const platformWaveUrl =
+      process.env.PLATFORM_WAVE_URL || "https://pay.wave.com/m/M_sn_3em1Iu3-fUxZ/c/sn/";
 
     return successResponse({
       paymentUrl: platformWaveUrl,

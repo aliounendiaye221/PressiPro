@@ -11,3 +11,14 @@ build.log
 .env*.local
 .env.vercel
 deploy-output*.txt
+
+# Mobile & Android Keystores
+*.jks
+*.keystore
+key.properties
+local.properties
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+ios/App/build/

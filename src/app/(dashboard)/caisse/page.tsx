@@ -6,7 +6,6 @@ import {
   Banknote,
   Search,
   Download,
-  Calendar,
   Wallet,
   Smartphone,
   CreditCard,
@@ -15,7 +14,6 @@ import {
   TrendingUp,
   Receipt,
   ArrowRight,
-  RefreshCw,
   ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -48,8 +46,15 @@ interface CaisseData {
   };
 }
 
+type CaissePeriod = "all" | "today" | "yesterday" | "7d" | "30d";
+
 function formatFCFA(n: number) {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " F";
+}
+
+function escapeCsvCell(value: string): string {
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -60,27 +65,55 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 const METHOD_BADGES: Record<string, { bg: string; text: string; border: string }> = {
-  CASH: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
-  WAVE: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
-  OM: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
-  OTHER: { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" },
+  CASH: {
+    bg: "bg-emerald-50 dark:bg-emerald-950/60",
+    text: "text-emerald-700 dark:text-emerald-300",
+    border: "border-emerald-200 dark:border-emerald-800/60",
+  },
+  WAVE: {
+    bg: "bg-blue-50 dark:bg-blue-950/60",
+    text: "text-blue-700 dark:text-blue-300",
+    border: "border-blue-200 dark:border-blue-800/60",
+  },
+  OM: {
+    bg: "bg-orange-50 dark:bg-orange-950/60",
+    text: "text-orange-700 dark:text-orange-300",
+    border: "border-orange-200 dark:border-orange-800/60",
+  },
+  OTHER: {
+    bg: "bg-gray-50 dark:bg-slate-800",
+    text: "text-gray-700 dark:text-slate-300",
+    border: "border-gray-200 dark:border-slate-700",
+  },
 };
 
+const PERIOD_TABS: Array<{ id: CaissePeriod; label: string; adminOnly?: boolean }> = [
+  { id: "today", label: "Aujourd'hui" },
+  { id: "yesterday", label: "Hier", adminOnly: true },
+  { id: "7d", label: "7 derniers jours", adminOnly: true },
+  { id: "30d", label: "30 derniers jours", adminOnly: true },
+  { id: "all", label: "Tout l'historique", adminOnly: true },
+];
+
 function CaisseContent() {
-  const { tenant } = useAuth();
+  const { user, tenant } = useAuth();
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+
   const [data, setData] = useState<CaisseData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<"all" | "today" | "yesterday" | "7d" | "30d">("today");
+  const [period, setPeriod] = useState<CaissePeriod>("today");
   const [method, setMethod] = useState("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
+  const effectivePeriod: CaissePeriod = isAdmin ? period : "today";
+
   const fetchCaisse = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("period", period);
+      params.set("period", effectivePeriod);
       if (method !== "ALL") params.set("method", method);
       if (search) params.set("q", search);
       params.set("page", String(page));
@@ -96,7 +129,7 @@ function CaisseContent() {
     } finally {
       setLoading(false);
     }
-  }, [period, method, search, page, pageSize]);
+  }, [effectivePeriod, method, search, page, pageSize]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -108,14 +141,22 @@ function CaisseContent() {
   const exportCSV = () => {
     if (!data?.payments || data.payments.length === 0) return;
 
-    const headers = ["Date & Heure", "Commande", "Client", "Telephone", "Mode de Paiement", "Agent Encaisseur", "Montant (FCFA)"];
+    const headers = [
+      "Date & Heure",
+      "Commande",
+      "Client",
+      "Telephone",
+      "Mode de Paiement",
+      "Agent Encaisseur",
+      "Montant (FCFA)",
+    ];
     const rows = data.payments.map((p) => [
-      `"${new Date(p.createdAt).toLocaleString("fr-SN")}"`,
-      `"${p.orderCode}"`,
-      `"${p.customerName.replace(/"/g, '""')}"`,
-      `"${p.customerPhone}"`,
-      `"${METHOD_LABELS[p.method] || p.method}"`,
-      `"${p.agentName}"`,
+      escapeCsvCell(new Date(p.createdAt).toLocaleString("fr-SN")),
+      escapeCsvCell(p.orderCode),
+      escapeCsvCell(p.customerName),
+      escapeCsvCell(p.customerPhone),
+      escapeCsvCell(METHOD_LABELS[p.method] || p.method),
+      escapeCsvCell(p.agentName),
       p.amount,
     ]);
 
@@ -124,49 +165,53 @@ function CaisseContent() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `journal-de-caisse-${tenant?.name?.replace(/\s+/g, "-") || "pressing"}-${period}.csv`;
+    link.download = `journal-de-caisse-${tenant?.name?.replace(/\s+/g, "-") || "pressing"}-${effectivePeriod}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
+  const visibleTabs = PERIOD_TABS.filter((t) => !t.adminOnly || isAdmin);
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header with Switcher between Caisse and Dépenses */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 dark:border-slate-800 pb-5">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-primary-600 bg-primary-50 border border-primary-100 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+            <span className="text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-950/60 border border-primary-100 dark:border-primary-800/60 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
               Finances Pressing
             </span>
             <span className="text-xs text-gray-400 font-medium">·</span>
-            <span className="text-xs text-gray-500 font-bold">{tenant?.name || "PressiPro"}</span>
+            <span className="text-xs text-gray-500 dark:text-slate-400 font-bold">{tenant?.name || "PressiPro"}</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-gray-900 mt-1 flex items-center gap-2.5">
-            <Banknote className="w-6 h-6 text-emerald-600" />
-            <span>Journal de Caisse & Encaissements</span>
+          <h1 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white mt-1 flex items-center gap-2.5">
+            <Banknote className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            <span>Journal de Caisse &amp; Encaissements</span>
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 mt-0.5">
             Traçabilité chronologique de tous les règlements, acomptes et soldes enregistrés
           </p>
         </div>
 
-        {/* Links to Dépenses & Bilan */}
+        {/* Links to Dépenses & Bilan (Admin only) + CSV Export */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <Link
-            href="/expenses"
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl shadow-xs transition-colors"
-          >
-            <Wallet className="w-4 h-4 text-primary-600" />
-            <span>Dépenses & Bilan</span>
-            <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
-          </Link>
+          {isAdmin && (
+            <Link
+              href="/expenses"
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xs transition-colors"
+            >
+              <Wallet className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+              <span>Dépenses &amp; Bilan</span>
+              <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+            </Link>
+          )}
           <button
             type="button"
             onClick={exportCSV}
             disabled={!data || data.payments.length === 0}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl shadow-xs transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/70 border border-emerald-200 dark:border-emerald-800/60 rounded-xl shadow-xs transition-colors disabled:opacity-50"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Exporter CSV</span>
           </button>
         </div>
@@ -175,95 +220,89 @@ function CaisseContent() {
       {/* 4 Financial Synthesis Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Encaissé */}
-        <div className="card-levitate bg-gradient-to-br from-emerald-50/60 via-white to-white p-4 rounded-2xl border border-emerald-200/80 shadow-xs relative overflow-hidden">
+        <div className="card-levitate bg-gradient-to-br from-emerald-50/60 dark:from-emerald-950/30 via-white dark:via-slate-900 to-white dark:to-slate-900 p-4 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/60 shadow-xs relative overflow-hidden">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-800">
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
               Total Encaissé
             </span>
             <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-emerald-600">
+          <p className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400">
             {formatFCFA(data?.totalAmount || 0)}
           </p>
-          <p className="text-[11px] text-gray-500 mt-1">
+          <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">
             {data?.totalCount || 0} versement{data && data.totalCount > 1 ? "s" : ""} enregistré{data && data.totalCount > 1 ? "s" : ""}
           </p>
         </div>
 
         {/* Espèces */}
-        <div className="card-levitate bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+        <div className="card-levitate bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-500">
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400">
               Espèces (Cash)
             </span>
-            <div className="w-8 h-8 rounded-xl bg-gray-100 text-gray-700 flex items-center justify-center">
-              <Banknote className="w-4 h-4 text-emerald-600" />
+            <div className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 flex items-center justify-center">
+              <Banknote className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             </div>
           </div>
-          <p className="text-lg sm:text-xl font-bold text-gray-900">
+          <p className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
             {formatFCFA(data?.summaryByMethod.CASH || 0)}
           </p>
-          <p className="text-[11px] text-gray-400 mt-1">Direct comptoir</p>
+          <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">Direct comptoir</p>
         </div>
 
         {/* Wave */}
-        <div className="card-levitate bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+        <div className="card-levitate bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-blue-700">
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">
               Paiements Wave
             </span>
-            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <CreditCard className="w-4 h-4 text-blue-600" />
+            <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <CreditCard className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </div>
           </div>
-          <p className="text-lg sm:text-xl font-bold text-gray-900">
+          <p className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
             {formatFCFA(data?.summaryByMethod.WAVE || 0)}
           </p>
-          <p className="text-[11px] text-gray-400 mt-1">Mobile Money</p>
+          <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">Mobile Money</p>
         </div>
 
         {/* Orange Money */}
-        <div className="card-levitate bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+        <div className="card-levitate bg-white dark:bg-slate-900 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-orange-700">
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400">
               Orange Money
             </span>
-            <div className="w-8 h-8 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
-              <Smartphone className="w-4 h-4 text-orange-600" />
+            <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+              <Smartphone className="w-4 h-4 text-orange-600 dark:text-orange-400" />
             </div>
           </div>
-          <p className="text-lg sm:text-xl font-bold text-gray-900">
+          <p className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
             {formatFCFA(data?.summaryByMethod.OM || 0)}
           </p>
-          <p className="text-[11px] text-gray-400 mt-1">Mobile Money</p>
+          <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">Mobile Money</p>
         </div>
       </div>
 
       {/* Toolbar: Periods, Search & Method Filters */}
-      <div className="card p-4 space-y-3 bg-white">
+      <div className="card p-4 space-y-3 bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           {/* Period selector tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 text-xs no-scrollbar">
-            {[
-              { id: "today", label: "Aujourd'hui" },
-              { id: "yesterday", label: "Hier" },
-              { id: "7d", label: "7 derniers jours" },
-              { id: "30d", label: "Ce mois" },
-              { id: "all", label: "Tout l'historique" },
-            ].map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => {
-                  setPeriod(tab.id as any);
+                  setPeriod(tab.id);
                   setPage(1);
                 }}
                 className={`px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                  period === tab.id
+                  effectivePeriod === tab.id
                     ? "bg-primary-600 text-white shadow-xs scale-[1.02]"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200/70"
+                    : "bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-200/70 dark:hover:bg-slate-700"
                 }`}
               >
                 {tab.label}
@@ -324,21 +363,22 @@ function CaisseContent() {
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="relative w-10 h-10">
-            <div className="absolute inset-0 rounded-full border-4 border-primary-100" />
+            <div className="absolute inset-0 rounded-full border-4 border-primary-100 dark:border-primary-950" />
             <div className="absolute inset-0 rounded-full border-4 border-primary-600 border-t-transparent animate-spin" />
           </div>
         </div>
       ) : !data || data.payments.length === 0 ? (
-        <div className="card text-center py-16 bg-white">
-          <Receipt className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-700 font-bold text-base">Aucun encaissement trouvé</p>
-          <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+        <div className="card text-center py-16 bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800">
+          <Receipt className="w-12 h-12 text-gray-300 dark:text-slate-700 mx-auto mb-3" />
+          <p className="text-gray-700 dark:text-slate-200 font-bold text-base">Aucun encaissement trouvé</p>
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 max-w-sm mx-auto">
             Aucun paiement ne correspond aux filtres sélectionnés. Modifiez la période ou effectuez un nouveau dépôt.
           </p>
           <div className="mt-4 flex items-center justify-center gap-3">
             <button
+              type="button"
               onClick={() => {
-                setPeriod("all");
+                setPeriod(isAdmin ? "all" : "today");
                 setMethod("ALL");
                 setSearch("");
               }}
@@ -352,9 +392,9 @@ function CaisseContent() {
           </div>
         </div>
       ) : (
-        <div className="card overflow-hidden p-0 bg-white shadow-xs border border-gray-200/80">
+        <div className="card overflow-hidden p-0 bg-white dark:bg-slate-900 shadow-xs border border-gray-200/80 dark:border-slate-800">
           {/* Mobile Card List (sm:hidden) */}
-          <div className="sm:hidden divide-y divide-gray-100">
+          <div className="sm:hidden divide-y divide-gray-100 dark:divide-slate-800">
             {data.payments.map((p) => {
               const badge = METHOD_BADGES[p.method] || METHOD_BADGES.OTHER;
               return (
@@ -362,12 +402,12 @@ function CaisseContent() {
                   <div className="flex items-center justify-between gap-2">
                     <Link
                       href={p.orderId ? `/orders/${p.orderId}` : `/orders?q=${encodeURIComponent(p.orderCode)}`}
-                      className="font-mono font-bold text-xs text-primary-700 hover:underline flex items-center gap-1"
+                      className="font-mono font-bold text-xs text-primary-700 dark:text-primary-400 hover:underline flex items-center gap-1"
                     >
                       <span>{p.orderCode}</span>
                       <ExternalLink className="w-3 h-3 text-gray-400" />
                     </Link>
-                    <span className="font-black text-emerald-600 text-sm">
+                    <span className="font-black text-emerald-600 dark:text-emerald-400 text-sm">
                       +{formatFCFA(p.amount)}
                     </span>
                   </div>
@@ -376,21 +416,21 @@ function CaisseContent() {
                     {p.customerId ? (
                       <Link
                         href={`/customers/${p.customerId}`}
-                        className="font-bold text-gray-900 hover:text-primary-600 hover:underline flex items-center gap-1"
+                        className="font-bold text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 hover:underline flex items-center gap-1"
                         title="Voir tout l'historique de ce client"
                       >
                         <span>{p.customerName}</span>
                         <ExternalLink className="w-3 h-3 text-gray-400" />
                       </Link>
                     ) : (
-                      <span className="font-bold text-gray-900">{p.customerName}</span>
+                      <span className="font-bold text-gray-900 dark:text-white">{p.customerName}</span>
                     )}
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg} ${badge.text} ${badge.border}`}>
                       {METHOD_LABELS[p.method] || p.method}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-50">
+                  <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-slate-400 pt-1 border-t border-gray-50 dark:border-slate-800/80">
                     <span>
                       {new Date(p.createdAt).toLocaleString("fr-SN", {
                         day: "2-digit",
@@ -399,7 +439,9 @@ function CaisseContent() {
                         minute: "2-digit",
                       })}
                     </span>
-                    <span>Agent : <strong className="text-gray-700">{p.agentName}</strong></span>
+                    <span>
+                      Agent : <strong className="text-gray-700 dark:text-slate-200">{p.agentName}</strong>
+                    </span>
                   </div>
                 </div>
               );
@@ -409,9 +451,9 @@ function CaisseContent() {
           {/* Desktop Table (hidden sm:block) */}
           <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="bg-gray-50/90 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+              <thead className="bg-gray-50/90 dark:bg-slate-800/80 border-b border-gray-100 dark:border-slate-800 text-[11px] font-bold text-gray-400 dark:text-slate-400 uppercase tracking-wider">
                 <tr>
-                  <th className="py-3 px-4">Date & Heure</th>
+                  <th className="py-3 px-4">Date &amp; Heure</th>
                   <th className="py-3 px-4">N° Commande</th>
                   <th className="py-3 px-4">Client</th>
                   <th className="py-3 px-4">Mode de Règlement</th>
@@ -419,12 +461,12 @@ function CaisseContent() {
                   <th className="py-3 px-4 text-right">Montant Encaissé</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                 {data.payments.map((p) => {
                   const badge = METHOD_BADGES[p.method] || METHOD_BADGES.OTHER;
                   return (
-                    <tr key={p.id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="py-3 px-4 text-xs text-gray-500 whitespace-nowrap">
+                    <tr key={p.id} className="hover:bg-gray-50/60 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="py-3 px-4 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">
                         {new Date(p.createdAt).toLocaleString("fr-SN", {
                           day: "2-digit",
                           month: "2-digit",
@@ -437,29 +479,31 @@ function CaisseContent() {
                       <td className="py-3 px-4 font-mono font-bold">
                         <Link
                           href={p.orderId ? `/orders/${p.orderId}` : `/orders?q=${encodeURIComponent(p.orderCode)}`}
-                          className="text-primary-600 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
+                          className="text-primary-600 dark:text-primary-400 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
                           title="Voir la commande"
                         >
                           <span>{p.orderCode}</span>
-                          <ExternalLink className="w-3 h-3 text-gray-300" />
+                          <ExternalLink className="w-3 h-3 text-gray-300 dark:text-slate-600" />
                         </Link>
                       </td>
 
-                      <td className="py-3 px-4 font-medium text-gray-900">
+                      <td className="py-3 px-4 font-medium text-gray-900 dark:text-white">
                         {p.customerId ? (
                           <Link
                             href={`/customers/${p.customerId}`}
-                            className="hover:text-primary-600 hover:underline inline-flex items-center gap-1 font-bold group"
+                            className="hover:text-primary-600 dark:hover:text-primary-400 hover:underline inline-flex items-center gap-1 font-bold group"
                             title="Voir l'historique et la fiche de ce client"
                           >
                             <span>{p.customerName}</span>
-                            <ExternalLink className="w-3 h-3 text-gray-300 group-hover:text-primary-500 transition-colors" />
+                            <ExternalLink className="w-3 h-3 text-gray-300 dark:text-slate-600 group-hover:text-primary-500 transition-colors" />
                           </Link>
                         ) : (
                           <span>{p.customerName}</span>
                         )}
                         {p.customerPhone && (
-                          <span className="text-xs text-gray-400 block font-normal">{p.customerPhone}</span>
+                          <span className="text-xs text-gray-400 dark:text-slate-500 block font-normal">
+                            {p.customerPhone}
+                          </span>
                         )}
                       </td>
 
@@ -469,13 +513,13 @@ function CaisseContent() {
                         </span>
                       </td>
 
-                      <td className="py-3 px-4 text-xs text-gray-600 font-medium whitespace-nowrap">
-                        <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 font-semibold text-[11px]">
+                      <td className="py-3 px-4 text-xs text-gray-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                        <span className="px-2 py-0.5 rounded-md bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 font-semibold text-[11px]">
                           {p.agentName}
                         </span>
                       </td>
 
-                      <td className="py-3 px-4 text-right font-black text-emerald-600 whitespace-nowrap text-base">
+                      <td className="py-3 px-4 text-right font-black text-emerald-600 dark:text-emerald-400 whitespace-nowrap text-base">
                         +{formatFCFA(p.amount)}
                       </td>
                     </tr>
@@ -487,8 +531,8 @@ function CaisseContent() {
 
           {/* Pagination */}
           {data.totalPages > 1 && (
-            <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-gray-50/50">
-              <span className="text-xs text-gray-500">
+            <div className="flex items-center justify-between p-4 border-t border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/40">
+              <span className="text-xs text-gray-500 dark:text-slate-400">
                 Affichage page <strong>{data.page}</strong> sur <strong>{data.totalPages}</strong> ({data.totalCount} transactions)
               </span>
               <div className="flex items-center gap-2">

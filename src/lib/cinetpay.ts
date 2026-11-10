@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { prisma } from "@/lib/db";
 
 export interface CinetPayConfig {
@@ -14,14 +15,15 @@ export interface InitiatePaymentParams {
   customerName: string;
   customerPhone?: string | null;
   customerEmail?: string | null;
-  tenantId: string;
+  /** Pass tenantId ONLY for tenant order payments; omit for PressiPro SaaS subscriptions */
+  tenantId?: string;
   tenantName: string;
   returnUrl: string;
   notifyUrl: string;
   customToken?: string;
   transactionId?: string;
   description?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CinetPayInitResponse {
@@ -53,23 +55,53 @@ export interface SimulatedTransaction {
   status: "ACCEPTED" | "REFUSED";
   paymentMethod: string;
   date: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
-// Registre des paiements de simulation (utile en dev ou quand la passerelle externe est hors ligne)
 const simulatedTransactions = new Map<string, SimulatedTransaction>();
 
+export function isSimulationAllowedInEnv(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" ||
+    process.env.CINETPAY_SIMULATE === "true"
+  );
+}
+
 export function registerSimulatedTransaction(data: SimulatedTransaction) {
+  if (!isSimulationAllowedInEnv()) return;
+  if (simulatedTransactions.size >= 1000) {
+    const oldest = simulatedTransactions.keys().next().value;
+    if (oldest) simulatedTransactions.delete(oldest);
+  }
   simulatedTransactions.set(data.transactionId, data);
 }
 
 export function getSimulatedTransaction(txId: string): SimulatedTransaction | undefined {
+  if (!isSimulationAllowedInEnv()) return undefined;
   return simulatedTransactions.get(txId);
 }
 
+function getBindingSecret(): string {
+  return process.env.JWT_SECRET || "pressipro-tx-binding-fallback-dev-secret";
+}
+
 /**
- * Récupère la configuration CinetPay pour un tenant donné
- * (priorité aux identifiants propres du pressing, sinon fallback sur les variables d'environnement globales)
+ * Computes a deterministic 6-digit numeric HMAC tag binding a transaction to (tenantId, orderId).
+ * Keeps transaction IDs strictly matching /^PPO-[A-Z0-9]+-\d+$/ and <= 26 chars for CinetPay v1/v2.
+ */
+export function computeOrderNumericTag(tenantId: string, orderId: string): string {
+  const digest = crypto
+    .createHmac("sha256", getBindingSecret())
+    .update(`${tenantId}:${orderId}`)
+    .digest();
+  const num = digest.readUInt32BE(0) % 1_000_000;
+  return num.toString().padStart(6, "0");
+}
+
+/**
+ * Récupère la configuration CinetPay.
+ * - Si `tenantId` est fourni (paiement commande pressing), utilise les clés du pressing ou fallback env.
+ * - Si `tenantId` est omis (abonnement SaaS PressiPro), utilise exclusivement les clés plateforme.
  */
 export async function getCinetPayConfig(tenantId?: string): Promise<CinetPayConfig> {
   let apiKey = process.env.CINETPAY_API_KEY || "";
@@ -110,33 +142,91 @@ export async function getCinetPayConfig(tenantId?: string): Promise<CinetPayConf
 }
 
 /**
- * Génère un identifiant de transaction CinetPay unique et traçable
+ * Génère un identifiant de transaction CinetPay/Wave unique et traçable.
+ * Lorsque `binding` ({ tenantId, orderId }) est fourni, intègre un tag HMAC numérique à 6 chiffres
+ * empêchant tout rejeu inter-commandes ou collision multi-tenant sur `P-00001`.
  */
-export function generateTransactionId(orderCode: string): string {
-  // Format alphanumérique court et conforme CinetPay (ex: PPO-P00123-1712345678)
-  const cleanCode = orderCode.replace(/[^a-zA-Z0-9]/g, "");
+export function generateTransactionId(
+  orderCode: string,
+  binding?: { tenantId: string; orderId: string }
+): string {
+  const cleanCode = orderCode.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8);
+  if (binding?.tenantId && binding?.orderId) {
+    const tag6 = computeOrderNumericTag(binding.tenantId, binding.orderId);
+    const ts4 = Date.now().toString().slice(-4);
+    const rand3 = Math.floor(100 + Math.random() * 900);
+    return `PPO-${cleanCode}-${tag6}${ts4}${rand3}`;
+  }
   const rand = Math.floor(1000 + Math.random() * 9000);
   const timestamp = Date.now().toString().slice(-6);
   return `PPO-${cleanCode}-${timestamp}${rand}`;
 }
 
 /**
- * Initialise un paiement CinetPay (avec support API moderne v1, API v2 legacy et passerelle de simulation)
+ * Vérifie qu'un identifiant `PPO-...` appartient bien à la commande `(tenantId, orderId, orderCode)`.
  */
+export function verifyOrderTransactionBinding(
+  transactionId: string,
+  order: { id: string; tenantId: string; code: string },
+  options: { allowLegacyUnbound?: boolean } = {}
+): boolean {
+  if (!transactionId || !transactionId.startsWith("PPO-")) {
+    return false;
+  }
+  const parts = transactionId.split("-");
+  if (parts.length !== 3) return false;
+
+  const [, txCleanCode, suffix] = parts;
+  const expectedCleanCode = order.code.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8);
+  if (!txCleanCode || txCleanCode !== expectedCleanCode) {
+    return false;
+  }
+  if (!/^\d+$/.test(suffix)) {
+    return false;
+  }
+
+  // Bound 13-digit suffix: 6-digit HMAC + 4-digit timestamp + 3-digit nonce
+  if (suffix.length === 13) {
+    const expectedTag = computeOrderNumericTag(order.tenantId, order.id);
+    return suffix.slice(0, 6) === expectedTag;
+  }
+
+  // Legacy 10-digit suffix compatibility for in-flight transactions at deploy time
+  if (suffix.length === 10 && options.allowLegacyUnbound) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function initiateCinetPayPayment(
   params: InitiatePaymentParams
 ): Promise<CinetPayInitResponse> {
-  const config = await getCinetPayConfig(params.tenantId);
-  const isTest = process.env.NODE_ENV === "test";
-  const forceLive = process.env.CINETPAY_FORCE_LIVE === "true" || process.env.CINETPAY_SIMULATE === "false";
-  const isDev = process.env.NODE_ENV !== "production" && !isTest && !forceLive;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const isSubscription =
+    (params.transactionId && params.transactionId.startsWith("SUB-")) ||
+    params.metadata?.type === "SUBSCRIPTION";
+  const effectiveTenantId = isSubscription ? undefined : params.tenantId;
 
-  // Identifiant de transaction unique
-  const transactionId = params.transactionId || generateTransactionId(params.orderCode);
+  const config = await getCinetPayConfig(effectiveTenantId);
+  const isTest = process.env.NODE_ENV === "test";
+  const forceLive =
+    process.env.CINETPAY_FORCE_LIVE === "true" ||
+    process.env.CINETPAY_SIMULATE === "false";
+  const isDev = process.env.NODE_ENV !== "production" && !isTest && !forceLive;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://pressipro.vercel.app";
+
+  const transactionId =
+    params.transactionId ||
+    generateTransactionId(
+      params.orderCode,
+      effectiveTenantId && params.orderId
+        ? { tenantId: effectiveTenantId, orderId: params.orderId }
+        : undefined
+    );
 
   const description =
-    params.description || `Paiement pressing ${params.tenantName} - Commande ${params.orderCode}`;
+    params.description ||
+    `Paiement pressing ${params.tenantName} - Commande ${params.orderCode}`;
 
   const buildSimulationUrl = () => {
     try {
@@ -145,21 +235,18 @@ export async function initiateCinetPayPayment(
       url.searchParams.set("amount", Math.round(params.amount).toString());
       url.searchParams.set("desc", description);
       url.searchParams.set("returnUrl", params.returnUrl);
-      url.searchParams.set("notifyUrl", params.notifyUrl);
       url.searchParams.set("customerName", params.customerName || "Client");
       if (params.customerPhone) {
         url.searchParams.set("customerPhone", params.customerPhone);
       }
       return url.toString();
     } catch {
-      return `/checkout/simulate?tx=${encodeURIComponent(transactionId)}&amount=${Math.round(params.amount)}&returnUrl=${encodeURIComponent(params.returnUrl)}&notifyUrl=${encodeURIComponent(params.notifyUrl)}`;
+      return `/checkout/simulate?tx=${encodeURIComponent(transactionId)}&amount=${Math.round(params.amount)}&returnUrl=${encodeURIComponent(params.returnUrl)}`;
     }
   };
 
-  // Clé manquante
   if (!config.apiKey) {
     if (isDev) {
-      console.info("[CinetPay] Aucune clé API configurée. Utilisation du guichet de simulation local.");
       return {
         success: true,
         transactionId,
@@ -174,16 +261,15 @@ export async function initiateCinetPayPayment(
     };
   }
 
-  // Si la simulation n'est pas forcée et qu'on est en forceLive
   if (forceLive && config.apiKey.startsWith("sk_") && !config.secretKey) {
     return {
       success: false,
       transactionId,
-      error: "Pour le mode opérationnel avec une clé CinetPay (sk_...), vous devez également renseigner le mot de passe d'API (CINETPAY_SECRET_KEY).",
+      error:
+        "Pour le mode opérationnel avec une clé CinetPay (sk_...), vous devez également renseigner le mot de passe d'API (CINETPAY_SECRET_KEY).",
     };
   }
 
-  // Force simulation mode if flag is enabled
   if (process.env.CINETPAY_SIMULATE === "true") {
     return {
       success: true,
@@ -193,7 +279,6 @@ export async function initiateCinetPayPayment(
     };
   }
 
-  // Nettoyage du numéro de téléphone
   let phone = (params.customerPhone || "").replace(/[^0-9]/g, "");
   if (phone.length === 9) {
     phone = `+221${phone}`;
@@ -201,16 +286,18 @@ export async function initiateCinetPayPayment(
     phone = `+${phone}`;
   }
 
-  // 1. Essai avec l'API moderne CinetPay v1 (si clé de type sk_test_ ou sk_live_ avec secretKey et pas en test unitaire)
-  const isModernKey = config.apiKey.startsWith("sk_test_") || config.apiKey.startsWith("sk_live_");
-  const secretKey = config.secretKey || process.env.CINETPAY_SECRET_KEY || process.env.CINETPAY_API_PASSWORD;
+  const isModernKey =
+    config.apiKey.startsWith("sk_test_") || config.apiKey.startsWith("sk_live_");
+  const secretKey =
+    config.secretKey ||
+    process.env.CINETPAY_SECRET_KEY ||
+    process.env.CINETPAY_API_PASSWORD;
 
   if (isModernKey && secretKey && !isTest) {
     const isLive = config.apiKey.startsWith("sk_live_");
     const v1Base = isLive ? "https://api.cinetpay.co" : "https://api.cinetpay.net";
 
     try {
-      // Login OAuth
       const authRes = await fetch(`${v1Base}/v1/oauth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -235,7 +322,7 @@ export async function initiateCinetPayPayment(
           amount: Math.round(params.amount),
           lang: "fr",
           designation: description.slice(0, 100),
-          client_email: params.customerEmail || "client@pressipro.tech",
+          client_email: params.customerEmail || "client@pressipro.sn",
           client_first_name: firstName,
           client_last_name: lastName,
           client_phone_number: phone || "+221770000000",
@@ -268,12 +355,13 @@ export async function initiateCinetPayPayment(
         }
       }
     } catch (v1Err) {
-      console.warn("[CinetPay v1 Network/Auth Warning]", v1Err instanceof Error ? v1Err.message : v1Err);
-      // Fall through to legacy / simulation fallback
+      console.warn(
+        "[CinetPay v1 Network/Auth Warning]",
+        v1Err instanceof Error ? v1Err.message : v1Err
+      );
     }
   }
 
-  // 2. Appel passerelle v2 / checkout standard (ou mock dans les tests unitaires)
   const legacyPayload = {
     apikey: config.apiKey,
     site_id: config.siteId || "1",
@@ -288,14 +376,14 @@ export async function initiateCinetPayPayment(
       params.metadata || {
         orderId: params.orderId,
         orderCode: params.orderCode,
-        tenantId: params.tenantId,
+        tenantId: effectiveTenantId,
         token: params.customToken,
       }
     ),
     customer_name: params.customerName.slice(0, 30),
     customer_surname: "Client",
     customer_phone_number: phone || "+221770000000",
-    customer_email: params.customerEmail || "client@pressipro.tech",
+    customer_email: params.customerEmail || "client@pressipro.sn",
     customer_address: "Dakar",
     customer_city: "Dakar",
     customer_country: "SN",
@@ -336,9 +424,7 @@ export async function initiateCinetPayPayment(
     console.warn("[CinetPay Network Error]", error instanceof Error ? error.message : error);
   }
 
-  // 3. Fallback de résilience : si l'API externe est inaccessible (DNS ENOTFOUND, Timeout, ou Dev) et pas de forceLive
   if (!forceLive && (isDev || appUrl.includes("localhost") || appUrl.includes("127.0.0.1"))) {
-    console.info(`[CinetPay] Redirection vers le guichet de simulation local (${transactionId})`);
     return {
       success: true,
       transactionId,
@@ -350,22 +436,24 @@ export async function initiateCinetPayPayment(
   return {
     success: false,
     transactionId,
-    error: "Le service de paiement CinetPay est momentanément indisponible. Veuillez réessayer ou contacter le support.",
+    error:
+      "Le service de paiement CinetPay est momentanément indisponible. Veuillez réessayer ou contacter le support.",
   };
 }
 
-/**
- * Vérifie le statut d'une transaction directement auprès de CinetPay ou du simulateur
- */
 export async function checkCinetPayTransaction(
   transactionId: string,
-  tenantId?: string
+  tenantId?: string,
+  options: { allowSubscriptionShortcut?: boolean } = {}
 ): Promise<CinetPayCheckResponse> {
   const isTest = process.env.NODE_ENV === "test";
-  const forceLive = process.env.CINETPAY_FORCE_LIVE === "true" || process.env.CINETPAY_SIMULATE === "false";
+  const forceLive =
+    process.env.CINETPAY_FORCE_LIVE === "true" ||
+    process.env.CINETPAY_SIMULATE === "false";
+  const isSubscription = transactionId.startsWith("SUB-");
 
-  // 1. Vérifier si c'est une transaction simulée en mémoire (uniquement si pas forceLive)
-  if (!forceLive) {
+  // 1. Vérifier la transaction simulée uniquement hors production (ou si CINETPAY_SIMULATE === "true")
+  if (!forceLive && isSimulationAllowedInEnv()) {
     const sim = getSimulatedTransaction(transactionId);
     if (sim) {
       return {
@@ -381,33 +469,39 @@ export async function checkCinetPayTransaction(
     }
   }
 
-  // 2. Vérifier si l'enregistrement en base existe déjà avec statut SUCCESS (sauf en test unitaire)
-  if (!isTest) {
+  // 2. Raccourci SubscriptionPayment réservé exclusivement aux vérifications d'abonnement (jamais sur une commande !)
+  if (!isTest && isSubscription && options.allowSubscriptionShortcut) {
     try {
-      const isSub = transactionId.startsWith("SUB-");
-      if (isSub) {
-        const subRows = (await prisma.$queryRaw`
-          SELECT status, "paymentMethod", "operatorId", amount FROM "SubscriptionPayment" WHERE "transactionId" = ${transactionId} LIMIT 1
-        `) as Array<{ status: string; paymentMethod: string | null; operatorId: string | null; amount: number }>;
+      const subRows = (await prisma.$queryRaw`
+        SELECT status, "paymentMethod", "operatorId", amount
+        FROM "SubscriptionPayment"
+        WHERE "transactionId" = ${transactionId}
+        LIMIT 1
+      `) as Array<{
+        status: string;
+        paymentMethod: string | null;
+        operatorId: string | null;
+        amount: number;
+      }>;
 
-        if (subRows?.[0]?.status === "SUCCESS") {
-          return {
-            success: true,
-            status: "ACCEPTED",
-            amount: Number(subRows[0].amount),
-            currency: "XOF",
-            paymentMethod: subRows[0].paymentMethod || "WAVE",
-            operatorId: subRows[0].operatorId || "SIM-DB",
-            transactionId,
-          };
-        }
+      if (subRows?.[0]?.status === "SUCCESS") {
+        return {
+          success: true,
+          status: "ACCEPTED",
+          amount: Number(subRows[0].amount),
+          currency: "XOF",
+          paymentMethod: subRows[0].paymentMethod || "WAVE",
+          operatorId: subRows[0].operatorId || "SUB-DB",
+          transactionId,
+        };
       }
     } catch {
-      // Ignore DB error and continue to external check
+      // Continue to external check
     }
   }
 
-  const config = await getCinetPayConfig(tenantId);
+  // Abonnements SaaS : toujours utiliser les clés plateforme (ignorer tenantId)
+  const config = await getCinetPayConfig(isSubscription ? undefined : tenantId);
 
   if (!config.apiKey) {
     return {
@@ -452,14 +546,13 @@ export async function checkCinetPayTransaction(
       paymentMethod: txData?.payment_method,
       operatorId: txData?.operator_id,
       paymentDate: txData?.payment_date,
-      transactionId: transactionId,
+      transactionId,
       metadata: txData?.metadata,
       description: txData?.description,
     };
   } catch (error) {
     console.warn("[CinetPay Check Error]", error instanceof Error ? error.message : error);
 
-    // En environnement de test ou développement, si la vérification réseau échoue
     if (process.env.NODE_ENV !== "production") {
       return {
         success: false,
@@ -476,9 +569,6 @@ export async function checkCinetPayTransaction(
   }
 }
 
-/**
- * Mappe le code de méthode CinetPay vers le PaymentMethod de PressiPro
- */
 export function mapCinetPayMethod(cinetMethod?: string): "WAVE" | "OM" | "OTHER" {
   if (!cinetMethod) return "OTHER";
   const m = cinetMethod.toUpperCase();

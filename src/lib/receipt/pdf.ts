@@ -10,6 +10,31 @@ import { createReceiptShareToken } from "@/lib/receipt-share";
 const RECEIPT_CACHE_TTL_MS = 10 * 60 * 1000;
 const RECEIPT_CACHE_MAX_ENTRIES = 40;
 
+function sanitizePdfLogoUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("data:image/")) {
+    return trimmed.length <= 500_000 ? trimmed : null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:") return null;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host.endsWith(".local") ||
+      host.endsWith(".internal") ||
+      /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[0-1])\.|0\.)/.test(host) ||
+      host === "[::1]"
+    ) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 type OrderReceiptArgs = {
   tenantId: string;
   orderId: string;
@@ -100,8 +125,8 @@ function buildFingerprint(order: OrderForReceipt, isDuplicate: boolean): string 
 }
 
 async function buildReceiptData(order: OrderForReceipt, isDuplicate: boolean): Promise<ReceiptData> {
-  const amountDue = order.totalAmount - order.paidAmount;
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
+  const amountDue = Math.max(0, order.totalAmount - order.paidAmount);
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://pressipro.vercel.app").replace(/\/+$/, "");
   let qrText = `${appUrl}/orders/${order.id}`;
 
   try {
@@ -119,7 +144,7 @@ async function buildReceiptData(order: OrderForReceipt, isDuplicate: boolean): P
 
   return {
     tenantName: order.tenant.name,
-    tenantLogoUrl: order.tenant.logoUrl,
+    tenantLogoUrl: sanitizePdfLogoUrl(order.tenant.logoUrl),
     tenantPrimaryColor: order.tenant.brandPrimaryColor,
     tenantAccentColor: order.tenant.brandAccentColor,
     tenantAddress: order.tenant.address,
@@ -131,6 +156,7 @@ async function buildReceiptData(order: OrderForReceipt, isDuplicate: boolean): P
     promisedDate: order.promisedAt ? formatDate(order.promisedAt.toISOString()) : null,
     customerName: order.customer.name,
     customerPhone: order.customer.phone,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     items: order.items.map((item: any) => ({
       name: item.name,
       quantity: item.quantity,
@@ -195,9 +221,7 @@ export async function getOrderReceiptPdf(args: OrderReceiptArgs): Promise<OrderR
   const receiptDocument = React.createElement(ReceiptPDF, {
     data: receiptData,
   }) as ReactElement<DocumentProps>;
-  const pdfBuffer = new Uint8Array(
-    await renderToBuffer(receiptDocument)
-  );
+  const pdfBuffer = new Uint8Array(await renderToBuffer(receiptDocument));
 
   receiptPdfCache.set(key, {
     fingerprint,

@@ -1,104 +1,89 @@
-import { describe, it, expect } from "vitest";
-import { normalizePhoneForWhatsApp } from "@/lib/phone";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buildPhoneLookupCandidates,
+  normalizePhoneForStorage,
+  normalizePhoneForWhatsApp,
+} from "@/lib/phone";
+import { customerSchema } from "@/lib/validators";
+import { SUBSCRIPTION_PLANS, getPlanPrice } from "@/lib/subscription-plans";
+import {
+  PLAN_QUOTA_LIMITS,
+  isSaasQuotaEnforced,
+} from "@/lib/subscription-limits";
 
-describe("Customer History & Traceability Logic", () => {
-  const mockOrders = [
-    {
-      id: "ord-1",
-      code: "CMD-001",
-      status: "LIVRE" as const,
-      totalAmount: 15000,
-      paidAmount: 15000,
-      createdAt: new Date("2026-09-20T10:00:00Z"),
-      items: [
-        { name: "Chemise", quantity: 3, total: 6000 },
-        { name: "Pantalon", quantity: 2, total: 5000 },
-        { name: "Veste", quantity: 1, total: 4000 },
-      ],
-      payments: [
-        {
-          id: "pay-1",
-          amount: 15000,
-          method: "WAVE" as const,
-          createdAt: new Date("2026-09-20T10:05:00Z"),
-          createdBy: "user-1",
-        },
-      ],
-    },
-    {
-      id: "ord-2",
-      code: "CMD-002",
-      status: "PRET" as const,
-      totalAmount: 25000,
-      paidAmount: 10000,
-      createdAt: new Date("2026-09-28T14:30:00Z"),
-      items: [
-        { name: "Boubou 3 pièces", quantity: 1, total: 15000 },
-        { name: "Chemise", quantity: 2, total: 4000 },
-        { name: "Drap 2 places", quantity: 2, total: 6000 },
-      ],
-      payments: [
-        {
-          id: "pay-2",
-          amount: 10000,
-          method: "CASH" as const,
-          createdAt: new Date("2026-09-28T14:35:00Z"),
-          createdBy: "user-2",
-        },
-      ],
-    },
-  ];
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
-  it("calculates customer financial stats accurately", () => {
-    const totalOrders = mockOrders.length;
-    const totalSpent = mockOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-    const totalPaid = mockOrders.reduce((sum, o) => sum + o.paidAmount, 0);
-    const totalDebt = Math.max(0, totalSpent - totalPaid);
-    const activeOrdersCount = mockOrders.filter((o) => o.status !== "LIVRE").length;
+describe("Clients, Téléphones WhatsApp & Grille SaaS / Quotas", () => {
+  it("normalise les numéros sénégalais et internationaux sans préfixe 221 dupliqué", () => {
+    expect(normalizePhoneForStorage("77 123 45 67")).toBe("+221771234567");
+    expect(normalizePhoneForStorage("078 603 79 13")).toBe("+221786037913");
+    expect(normalizePhoneForStorage("00221 76 555 44 33")).toBe("+221765554433");
 
-    expect(totalOrders).toBe(2);
-    expect(totalSpent).toBe(40000);
-    expect(totalPaid).toBe(25000);
-    expect(totalDebt).toBe(15000);
-    expect(activeOrdersCount).toBe(1); // ord-2 is PRET
+    // Numéros WhatsApp prêts pour wa.me/ (sans + et sans préfixer 221 sur un indicatif étranger)
+    expect(normalizePhoneForWhatsApp("+221 78 603 79 13")).toBe("221786037913");
+    expect(normalizePhoneForWhatsApp("+33 6 12 34 56 78")).toBe("33612345678");
+    expect(normalizePhoneForWhatsApp("abc")).toBeNull();
+
+    const candidates = buildPhoneLookupCandidates("77 123 45 67");
+    expect(candidates).toContain("+221771234567");
+    expect(candidates).toContain("221771234567");
+    expect(candidates).toContain("771234567");
   });
 
-  it("aggregates and sorts all payments chronologically across all orders", () => {
-    const allPayments = mockOrders
-      .flatMap((order) =>
-        order.payments.map((p) => ({
-          id: p.id,
-          amount: p.amount,
-          method: p.method,
-          createdAt: p.createdAt,
-          orderCode: order.code,
-        }))
-      )
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-    expect(allPayments.length).toBe(2);
-    expect(allPayments[0].id).toBe("pay-2"); // More recent
-    expect(allPayments[0].orderCode).toBe("CMD-002");
-    expect(allPayments[1].id).toBe("pay-1");
-  });
-
-  it("calculates garment habits correctly", () => {
-    const countMap = new Map<string, number>();
-    mockOrders.forEach((o) => {
-      o.items.forEach((item) => {
-        countMap.set(item.name, (countMap.get(item.name) || 0) + item.quantity);
-      });
+  it("valide et normalise la création de fiche client via customerSchema", () => {
+    const parsed = customerSchema.safeParse({
+      name: "Fatou Ndiaye",
+      phone: "77 888 99 00",
+      email: "",
+      address: "Mermoz, Dakar",
     });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.phone).toBe("+221778889900");
+    }
 
-    expect(countMap.get("Chemise")).toBe(5); // 3 + 2
-    expect(countMap.get("Pantalon")).toBe(2);
-    expect(countMap.get("Boubou 3 pièces")).toBe(1);
-    expect(countMap.get("Drap 2 places")).toBe(2);
+    const invalid = customerSchema.safeParse({
+      name: "Client Invalide",
+      phone: "123",
+    });
+    expect(invalid.success).toBe(false);
   });
 
-  it("formats WhatsApp contact links correctly for Senegalese numbers", () => {
-    const rawPhone = "77 800 12 34";
-    const cleanPhone = normalizePhoneForWhatsApp(rawPhone);
-    expect(cleanPhone).toBe("221778001234");
+  it("aligne strictement les tarifs et quotas des 4 offres SaaS sans bloquer la prod par défaut", () => {
+    expect(getPlanPrice("FREE", "monthly")).toBe(0);
+    expect(getPlanPrice("BASIC", "monthly")).toBe(5000);
+    expect(getPlanPrice("BASIC", "yearly")).toBe(50000);
+    expect(getPlanPrice("PRO", "monthly")).toBe(10000);
+    expect(getPlanPrice("PRO", "yearly")).toBe(100000);
+    expect(getPlanPrice("ENTERPRISE", "monthly")).toBe(50000);
+    expect(getPlanPrice("ENTERPRISE", "yearly")).toBe(500000);
+
+    expect(Object.keys(SUBSCRIPTION_PLANS)).toEqual([
+      "FREE",
+      "BASIC",
+      "PRO",
+      "ENTERPRISE",
+    ]);
+
+    expect(PLAN_QUOTA_LIMITS.FREE).toMatchObject({
+      maxOrdersTotal: 50,
+      maxUsers: 1,
+    });
+    expect(PLAN_QUOTA_LIMITS.BASIC).toMatchObject({
+      maxOrdersPerMonth: 300,
+      maxUsers: 3,
+    });
+    expect(PLAN_QUOTA_LIMITS.PRO.maxOrdersTotal).toBeNull();
+    expect(PLAN_QUOTA_LIMITS.PRO.maxOrdersPerMonth).toBeNull();
+    expect(PLAN_QUOTA_LIMITS.PRO.maxUsers).toBeNull();
+
+    // Par défaut en production, les quotas remontent des avertissements doux sans bloquer un pressing actif
+    vi.stubEnv("ENFORCE_SAAS_QUOTAS", "");
+    expect(isSaasQuotaEnforced()).toBe(false);
+
+    vi.stubEnv("ENFORCE_SAAS_QUOTAS", "true");
+    expect(isSaasQuotaEnforced()).toBe(true);
   });
 });

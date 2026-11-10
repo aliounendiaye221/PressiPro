@@ -212,4 +212,19 @@
   .badge-glow-red {
     @apply bg-red-500/10 dark:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/20 dark:border-red-500/30 shadow-[0_0_12px_rgba(239,68,68,0.15)];
   }
+
+  /* Safe Area Insets for iOS & Android notch / home indicator */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pl-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  .pr-safe {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
 }
+

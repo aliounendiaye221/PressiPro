@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Zap,
   ShieldCheck,
-  CreditCard,
   Sparkles,
   ArrowRight,
   Clock,
@@ -15,6 +14,8 @@ import {
   AlertTriangle,
   History,
   RefreshCw,
+  Users,
+  Package,
 } from "lucide-react";
 import {
   SUBSCRIPTION_PLANS,
@@ -31,6 +32,17 @@ interface SubscriptionData {
   currentPlanKey: PlanKey;
   subscribedAt: string | null;
   subscriptionExpiresAt: string | null;
+  isExpired?: boolean;
+  usage?: {
+    totalOrders: number;
+    monthOrders: number;
+    activeUsers: number;
+  };
+  limits?: {
+    maxTotalOrders: number | null;
+    maxMonthlyOrders: number | null;
+    maxUsers: number | null;
+  };
   payments: Array<{
     id: string;
     plan: string;
@@ -45,7 +57,8 @@ interface SubscriptionData {
 function SubscriptionContent() {
   const searchParams = useSearchParams();
   const [data, setData] = useState<SubscriptionData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
+  const [verifyingReturn, setVerifyingReturn] = useState(false);
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [initiatingPlan, setInitiatingPlan] = useState<PlanKey | null>(null);
   const [actionError, setActionError] = useState("");
@@ -53,7 +66,7 @@ function SubscriptionContent() {
 
   const fetchSubscription = useCallback(async () => {
     try {
-      const res = await fetch("/api/subscription");
+      const res = await fetch("/api/subscription", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
         setData(json.data || json);
@@ -72,24 +85,62 @@ function SubscriptionContent() {
     const txParam = searchParams.get("tx");
     const providerParam = searchParams.get("provider");
 
-    if (paymentParam === "return" && txParam) {
-      // Check status of subscription payment (Wave direct ou CinetPay)
-      const statusUrl = providerParam === "cinetpay"
+    if (paymentParam !== "return" || !txParam) {
+      return;
+    }
+
+    let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    const statusUrl =
+      providerParam === "cinetpay"
         ? `/api/subscription/cinetpay/status?tx=${encodeURIComponent(txParam)}`
         : `/api/subscription/wave/status?tx=${encodeURIComponent(txParam)}`;
 
-      fetch(statusUrl)
-        .then((res) => res.json())
-        .then((resData) => {
-          if (resData?.status === "SUCCESS" || resData?.data?.status === "SUCCESS") {
-            setSuccessMsg("Félicitations ! Votre abonnement PressiPro a été activé avec succès.");
-            fetchSubscription();
+    const pollStatus = async (attempt: number) => {
+      if (cancelled) return;
+      if (attempt === 0) setVerifyingReturn(true);
+      try {
+        const res = await fetch(statusUrl, { cache: "no-store" });
+        const resData = await res.json().catch(() => null);
+        if (cancelled) return;
+
+        const status = resData?.status || resData?.data?.status;
+        if (status === "SUCCESS" || status === "ACCEPTED") {
+          setVerifyingReturn(false);
+          setSuccessMsg("Félicitations ! Votre abonnement PressiPro a été activé avec succès.");
+          fetchSubscription();
+          return;
+        }
+
+        if (status === "FAILED" || status === "REFUSED") {
+          setVerifyingReturn(false);
+          setActionError("Le paiement n'a pas abouti ou a été annulé.");
+          return;
+        }
+
+        if (attempt < 3) {
+          timerId = setTimeout(() => pollStatus(attempt + 1), 2500);
+        } else {
+          setVerifyingReturn(false);
+          fetchSubscription();
+        }
+      } catch {
+        if (!cancelled) {
+          if (attempt < 3) {
+            timerId = setTimeout(() => pollStatus(attempt + 1), 2500);
+          } else {
+            setVerifyingReturn(false);
           }
-        })
-        .catch(() => {
-          // ignore
-        });
-    }
+        }
+      }
+    };
+
+    pollStatus(0);
+
+    return () => {
+      cancelled = true;
+      if (timerId) clearTimeout(timerId);
+    };
   }, [fetchSubscription, searchParams]);
 
   const handlePayPlan = async (plan: PlanKey) => {
@@ -98,7 +149,6 @@ function SubscriptionContent() {
     setActionError("");
 
     try {
-      // Tentative prioritaire via Wave direct checkout
       let res = await fetch("/api/subscription/wave/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -107,7 +157,6 @@ function SubscriptionContent() {
 
       let resData = await res.json().catch(() => null);
 
-      // Si Wave n'est pas encore configuré mais que CinetPay l'est, fallback transparent
       if (!res.ok && res.status === 500) {
         res = await fetch("/api/subscription/cinetpay/initiate", {
           method: "POST",
@@ -121,7 +170,6 @@ function SubscriptionContent() {
         throw new Error(resData?.error || "Impossible d'initier le paiement de l'abonnement.");
       }
 
-      // Redirection vers le guichet de paiement Wave
       window.location.href = resData.paymentUrl;
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Erreur lors de l'accès au guichet de paiement Wave");
@@ -130,12 +178,13 @@ function SubscriptionContent() {
   };
 
   const currentPlanKey = data?.currentPlanKey || "FREE";
+  const isExpired = Boolean(data?.isExpired);
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto pb-12">
       {/* Header Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-primary-950 to-slate-900 text-white p-6 sm:p-10 shadow-2xl border border-white/10">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute top-0 right-0 w-96 h-96 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-xs font-semibold text-primary-300 backdrop-blur-sm border border-white/10">
@@ -143,10 +192,10 @@ function SubscriptionContent() {
               Abonnement SaaS PressiPro
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Gérez & renouvelez votre abonnement
+              Gérez &amp; renouvelez votre abonnement
             </h1>
             <p className="text-sm text-slate-300 max-w-xl">
-              Payez instantanément votre abonnement via <strong>Wave Business (Sénégal & UEMOA)</strong> en 1 clic sur votre téléphone ou via Orange Money et Carte bancaire.
+              Payez instantanément votre abonnement via <strong>Wave Business (Sénégal &amp; UEMOA)</strong> en 1 clic sur votre téléphone ou via Orange Money et Carte bancaire.
             </p>
           </div>
 
@@ -159,15 +208,21 @@ function SubscriptionContent() {
               <span className="text-xl font-black text-white">
                 {SUBSCRIPTION_PLANS[currentPlanKey]?.name || currentPlanKey}
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                ACTIF
-              </span>
+              {isExpired ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/30">
+                  EXPIRÉ
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  ACTIF
+                </span>
+              )}
             </div>
             {data?.subscriptionExpiresAt && (
               <p className="text-xs text-slate-400 mt-2 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
-                Expire le :{" "}
-                <span className="font-semibold text-slate-200">
+                {isExpired ? "Expiré le :" : "Expire le :"}{" "}
+                <span className={`font-semibold ${isExpired ? "text-red-300" : "text-slate-200"}`}>
                   {new Date(data.subscriptionExpiresAt).toLocaleDateString("fr-FR")}
                 </span>
               </p>
@@ -175,6 +230,61 @@ function SubscriptionContent() {
           </div>
         </div>
       </div>
+
+      {/* Quota Usage Card */}
+      {data?.usage && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="card bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800 flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400 flex items-center justify-center">
+                <Package className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">
+                  {currentPlanKey === "FREE" ? "Commandes enregistrées" : "Commandes ce mois"}
+                </p>
+                <p className="text-base font-bold text-gray-900 dark:text-white">
+                  {currentPlanKey === "FREE" ? data.usage.totalOrders : data.usage.monthOrders}
+                  {" / "}
+                  {currentPlanKey === "FREE"
+                    ? data.limits?.maxTotalOrders ?? 50
+                    : data.limits?.maxMonthlyOrders ?? "Illimité"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-white dark:bg-slate-900 border border-gray-200/80 dark:border-slate-800 flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">Comptes utilisateurs actifs</p>
+                <p className="text-base font-bold text-gray-900 dark:text-white">
+                  {data.usage.activeUsers} / {data.limits?.maxUsers ?? "Illimité"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isExpired && (
+        <div className="rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-4 text-sm text-amber-900 dark:text-amber-200 flex items-center gap-3 animate-fade-in shadow-sm">
+          <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <p className="font-semibold text-xs">
+            Votre période d&apos;abonnement est arrivée à échéance. Renouvelez votre plan ci-dessous pour conserver l&apos;ensemble de vos avantages sans interruption.
+          </p>
+        </div>
+      )}
+
+      {verifyingReturn && !successMsg && (
+        <div className="rounded-2xl border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 p-4 text-sm text-sky-800 dark:text-sky-200 flex items-center gap-3 animate-fade-in shadow-sm">
+          <RefreshCw className="h-4 w-4 text-sky-600 animate-spin shrink-0" />
+          <p className="font-semibold text-xs">Vérification de la confirmation de paiement en cours...</p>
+        </div>
+      )}
 
       {successMsg && (
         <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-800 flex items-center gap-3 animate-fade-in shadow-sm">
@@ -227,8 +337,8 @@ function SubscriptionContent() {
       </div>
 
       {/* Pricing Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 max-w-4xl mx-auto gap-6 w-full">
-        {(["BASIC", "PRO"] as PlanKey[]).map((key) => {
+      <div className="grid grid-cols-1 md:grid-cols-3 max-w-6xl mx-auto gap-6 w-full">
+        {(["BASIC", "PRO", "ENTERPRISE"] as PlanKey[]).map((key) => {
           const plan = SUBSCRIPTION_PLANS[key];
           const price = getPlanPrice(key, cycle);
           const isCurrent = currentPlanKey === key;
@@ -240,13 +350,13 @@ function SubscriptionContent() {
               key={key}
               className={`relative rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 ${
                 isPopular
-                  ? "bg-gradient-to-b from-primary-50/80 via-white to-sky-50/40 dark:from-slate-800 dark:to-slate-900 border-2 border-primary-500 shadow-xl shadow-primary-500/10 scale-[1.02]"
+                  ? "bg-gradient-to-b from-primary-50/80 via-white to-sky-50/40 dark:from-slate-800 dark:to-slate-900 border-2 border-primary-500 shadow-xl shadow-primary-500/10 md:scale-[1.02]"
                   : "bg-white dark:bg-slate-800/80 border border-gray-200/90 dark:border-slate-700 shadow-md hover:shadow-lg"
               }`}
             >
               {isPopular && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                  <span className="px-3.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-primary-600 to-sky-600 text-white shadow-md flex items-center gap-1">
+                  <span className="px-3.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-primary-600 to-sky-600 text-white shadow-md flex items-center gap-1 whitespace-nowrap">
                     <Sparkles className="w-3 h-3 fill-white" />
                     {plan.badge || "Recommandé"}
                   </span>
@@ -340,7 +450,7 @@ function SubscriptionContent() {
           <div className="flex items-center gap-2 border-b pb-3 border-gray-100 dark:border-slate-800">
             <History className="w-4 h-4 text-gray-400" />
             <h3 className="font-bold text-sm text-gray-900 dark:text-white">
-              Historique de vos paiements d'abonnement
+              Historique de vos paiements d&apos;abonnement
             </h3>
           </div>
 

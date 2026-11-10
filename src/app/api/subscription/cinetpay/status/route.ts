@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 import { handleApiError, errorResponse, successResponse } from "@/lib/api-utils";
 import { checkCinetPayTransaction } from "@/lib/cinetpay";
-import { auditLog } from "@/lib/audit";
+import {
+  findSubscriptionPayment,
+  activateSubscriptionFromCinetPay,
+} from "@/lib/subscription-billing";
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,32 +13,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const transactionId = searchParams.get("tx");
 
-    if (!transactionId) {
-      return errorResponse("Identifiant de transaction manquant", 400);
+    if (!transactionId || !transactionId.startsWith("SUB-")) {
+      return errorResponse("Identifiant de transaction invalide", 400);
     }
 
-    // 1. Vérifier si l'enregistrement SubscriptionPayment existe
-    const payments = (await prisma.$queryRaw`
-      SELECT id, "tenantId", plan, amount, status, "createdAt"
-      FROM "SubscriptionPayment"
-      WHERE "transactionId" = ${transactionId}
-      LIMIT 1
-    `) as Array<{
-      id: string;
-      tenantId: string;
-      plan: string;
-      amount: number;
-      status: string;
-      createdAt: Date;
-    }>;
-
-    const subPayment = payments?.[0];
+    const subPayment = await findSubscriptionPayment(transactionId);
 
     if (!subPayment || subPayment.tenantId !== session.tenantId) {
       return errorResponse("Paiement d'abonnement introuvable pour ce compte", 404);
     }
 
-    // Si déjà validé
     if (subPayment.status === "SUCCESS") {
       return successResponse({
         status: "SUCCESS",
@@ -45,8 +31,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. Vérification auprès de l'API CinetPay
-    const checkResult = await checkCinetPayTransaction(transactionId); // plateforme
+    // Toujours vérifier avec les clés plateforme (tenantId = undefined)
+    const checkResult = await checkCinetPayTransaction(transactionId, undefined, {
+      allowSubscriptionShortcut: true,
+    });
 
     if (!checkResult.success || checkResult.status !== "ACCEPTED") {
       return successResponse({
@@ -55,49 +43,30 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 3. Calcul de la nouvelle date d'expiration (+ 30 jours par défaut ou + 365 jours)
-    const isYearly = subPayment.amount >= 100000;
-    const daysToAdd = isYearly ? 365 : 30;
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + daysToAdd);
+    const activation = await activateSubscriptionFromCinetPay(
+      subPayment,
+      checkResult,
+      "return"
+    );
 
-    // Mettre à jour SubscriptionPayment et Tenant
-    await prisma.$queryRaw`
-      UPDATE "SubscriptionPayment"
-      SET status = 'SUCCESS',
-          "operatorId" = ${checkResult.operatorId || null},
-          "paymentMethod" = ${checkResult.paymentMethod || null},
-          "updatedAt" = NOW()
-      WHERE "transactionId" = ${transactionId}
-    `;
-
-    await prisma.$queryRaw`
-      UPDATE "Tenant"
-      SET subscription = ${subPayment.plan},
-          "subscribedAt" = NOW(),
-          "subscriptionExpiresAt" = ${expiresAt},
-          "updatedAt" = NOW()
-      WHERE id = ${session.tenantId}
-    `;
-
-    await auditLog({
-      tenantId: session.tenantId,
-      action: "SUBSCRIPTION_ACTIVATED",
-      entity: "Tenant",
-      entityId: session.tenantId,
-      details: {
-        plan: subPayment.plan,
-        amount: subPayment.amount,
-        transactionId,
-        paymentMethod: checkResult.paymentMethod,
-        expiresAt: expiresAt.toISOString(),
-      },
-    });
+    if (!activation.activated) {
+      if (activation.reason === "already-processed") {
+        return successResponse({
+          status: "SUCCESS",
+          plan: subPayment.plan,
+          alreadyProcessed: true,
+        });
+      }
+      return errorResponse(
+        `Validation du paiement refusée (${activation.detail || activation.reason})`,
+        400
+      );
+    }
 
     return successResponse({
       status: "SUCCESS",
       plan: subPayment.plan,
-      expiresAt: expiresAt.toISOString(),
+      expiresAt: activation.expiresAt.toISOString(),
     });
   } catch (error) {
     return handleApiError(error);

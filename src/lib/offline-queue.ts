@@ -1,6 +1,12 @@
-const OFFLINE_QUEUE_KEY = "pressipro:offline-queue";
+import { getOfflineTenantScope } from "./offline-cache";
+
+const LEGACY_OFFLINE_QUEUE_KEY = "pressipro:offline-queue";
+const LEGACY_CUSTOMER_MAP_KEY = "pressipro:offline-customer-map";
+const OFFLINE_QUEUE_PREFIX = "pressipro:offline-queue:t:";
+const CUSTOMER_MAP_PREFIX = "pressipro:offline-customer-map:t:";
 const OFFLINE_QUEUE_EVENT = "pressipro:offline-queue-updated";
 const TEMP_CUSTOMER_PREFIX = "offline-customer";
+const MAX_PERMANENT_FAILURE_ATTEMPTS = 5;
 
 export type OfflineQueueActionType =
   | "CREATE_CUSTOMER"
@@ -14,6 +20,7 @@ export type OfflineQueueActionType =
 
 export interface OfflineQueueItem {
   id: string;
+  tenantId?: string;
   type: OfflineQueueActionType;
   createdAt: string;
   request: {
@@ -27,6 +34,7 @@ export interface OfflineQueueItem {
   };
   attempts?: number;
   lastError?: string;
+  permanentFailure?: boolean;
 }
 
 interface FlushResult {
@@ -66,6 +74,49 @@ function writeJson<T>(key: string, value: T) {
   }
 }
 
+function resolveScopedQueueKey(tenantId: string | null): string | null {
+  if (!tenantId) return null;
+  return `${OFFLINE_QUEUE_PREFIX}${tenantId}`;
+}
+
+function resolveScopedCustomerMapKey(tenantId: string | null): string | null {
+  if (!tenantId) return null;
+  return `${CUSTOMER_MAP_PREFIX}${tenantId}`;
+}
+
+/**
+ * Migration transparente et sans perte de la file historique non-scopée
+ * vers le premier pressing authentifié sur le poste en production.
+ */
+function migrateLegacyQueueIfNeeded(tenantId: string) {
+  if (!canUseBrowserStorage()) return;
+
+  try {
+    const scopedKey = `${OFFLINE_QUEUE_PREFIX}${tenantId}`;
+    const legacyRaw = window.localStorage.getItem(LEGACY_OFFLINE_QUEUE_KEY);
+    if (legacyRaw && !window.localStorage.getItem(scopedKey)) {
+      const legacyItems = JSON.parse(legacyRaw) as OfflineQueueItem[];
+      if (Array.isArray(legacyItems) && legacyItems.length > 0) {
+        const tagged = legacyItems.map((item) => ({
+          ...item,
+          tenantId: item.tenantId ?? tenantId,
+        }));
+        window.localStorage.setItem(scopedKey, JSON.stringify(tagged));
+      }
+      window.localStorage.removeItem(LEGACY_OFFLINE_QUEUE_KEY);
+    }
+
+    const scopedMapKey = `${CUSTOMER_MAP_PREFIX}${tenantId}`;
+    const legacyMapRaw = window.localStorage.getItem(LEGACY_CUSTOMER_MAP_KEY);
+    if (legacyMapRaw && !window.localStorage.getItem(scopedMapKey)) {
+      window.localStorage.setItem(scopedMapKey, legacyMapRaw);
+      window.localStorage.removeItem(LEGACY_CUSTOMER_MAP_KEY);
+    }
+  } catch {
+    // Ignore storage migration errors
+  }
+}
+
 function emitQueueChange() {
   if (!canUseBrowserStorage()) {
     return;
@@ -78,12 +129,24 @@ function emitQueueChange() {
   );
 }
 
-function readCustomerMappings() {
-  return readJson<Record<string, string>>("pressipro:offline-customer-map", {});
+export function notifyOfflineQueueScopeChanged() {
+  const tenantId = getOfflineTenantScope();
+  if (tenantId) {
+    migrateLegacyQueueIfNeeded(tenantId);
+  }
+  emitQueueChange();
 }
 
-function writeCustomerMappings(mappings: Record<string, string>) {
-  writeJson("pressipro:offline-customer-map", mappings);
+function readCustomerMappings(tenantId: string) {
+  const key = resolveScopedCustomerMapKey(tenantId);
+  if (!key) return {};
+  return readJson<Record<string, string>>(key, {});
+}
+
+function writeCustomerMappings(tenantId: string, mappings: Record<string, string>) {
+  const key = resolveScopedCustomerMapKey(tenantId);
+  if (!key) return;
+  writeJson(key, mappings);
 }
 
 function extractErrorMessage(payload: unknown) {
@@ -94,11 +157,13 @@ function extractErrorMessage(payload: unknown) {
     }
   }
 
-  return "Synchronisation echouee";
+  return "Synchronisation échouée";
 }
 
 async function findCustomerByPhone(phone: string) {
-  const response = await fetch(`/api/customers?q=${encodeURIComponent(phone)}&limit=5`);
+  const response = await fetch(`/api/customers?q=${encodeURIComponent(phone)}&limit=5`, {
+    credentials: "include",
+  });
   if (!response.ok) {
     return null;
   }
@@ -112,9 +177,22 @@ async function findCustomerByPhone(phone: string) {
 
 async function replayQueueItem(
   item: OfflineQueueItem,
+  tenantId: string,
   customerMappings: Record<string, string>
-): Promise<{ status: "processed" | "failed" | "blocked"; error?: string }> {
+): Promise<{
+  status: "processed" | "failed" | "blocked" | "unauthorized";
+  error?: string;
+  isPermanent4xx?: boolean;
+}> {
   const body = JSON.parse(JSON.stringify(item.request.body)) as Record<string, unknown>;
+
+  // Injecter l'identifiant d'idempotence client pour éviter les doublons réseau
+  if (
+    (item.type === "CREATE_ORDER" || item.type === "ADD_PAYMENT") &&
+    typeof body.clientRequestId !== "string"
+  ) {
+    body.clientRequestId = item.id;
+  }
 
   if (item.type === "CREATE_ORDER") {
     const customerId = body.customerId;
@@ -130,31 +208,48 @@ async function replayQueueItem(
   try {
     const response = await fetch(item.request.url, {
       method: item.request.method,
-      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Idempotency-Key": item.id,
+      },
       body: JSON.stringify(body),
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        return { status: "unauthorized", error: "Session expirée, reconnexion requise" };
+      }
+
       if (item.type === "CREATE_CUSTOMER" && response.status === 409) {
         const phone = typeof body.phone === "string" ? body.phone : "";
         if (phone) {
           const existingCustomer = await findCustomerByPhone(phone);
           if (existingCustomer && item.meta?.tempCustomerId) {
             customerMappings[item.meta.tempCustomerId] = existingCustomer.id;
-            writeCustomerMappings(customerMappings);
+            writeCustomerMappings(tenantId, customerMappings);
             return { status: "processed" };
           }
         }
       }
 
       const errorPayload = await response.json().catch(() => null);
-      return { status: "failed", error: extractErrorMessage(errorPayload) };
+      const isPermanent4xx =
+        response.status >= 400 &&
+        response.status < 500 &&
+        response.status !== 408 &&
+        response.status !== 429;
+      return {
+        status: "failed",
+        error: extractErrorMessage(errorPayload),
+        isPermanent4xx,
+      };
     }
 
     const payload = await response.json().catch(() => null);
     if (item.type === "CREATE_CUSTOMER" && item.meta?.tempCustomerId && payload?.id) {
       customerMappings[item.meta.tempCustomerId] = payload.id as string;
-      writeCustomerMappings(customerMappings);
+      writeCustomerMappings(tenantId, customerMappings);
     }
 
     return { status: "processed" };
@@ -167,27 +262,45 @@ export function createOfflineTempId(prefix: "customer" | "queue" = "queue") {
   return `offline-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function readOfflineQueue() {
-  return readJson<OfflineQueueItem[]>(OFFLINE_QUEUE_KEY, []);
+export function readOfflineQueue(explicitTenantId?: string | null): OfflineQueueItem[] {
+  const tenantId = explicitTenantId ?? getOfflineTenantScope();
+  if (!tenantId) {
+    return [];
+  }
+
+  migrateLegacyQueueIfNeeded(tenantId);
+  const key = resolveScopedQueueKey(tenantId);
+  if (!key) return [];
+  return readJson<OfflineQueueItem[]>(key, []);
 }
 
-export function getOfflineQueueCount() {
-  return readOfflineQueue().length;
+export function getOfflineQueueCount(explicitTenantId?: string | null) {
+  return readOfflineQueue(explicitTenantId).length;
 }
 
 export function enqueueOfflineAction(
-  item: Omit<OfflineQueueItem, "id" | "createdAt" | "attempts" | "lastError">
+  item: Omit<OfflineQueueItem, "id" | "createdAt" | "attempts" | "lastError">,
+  explicitTenantId?: string | null
 ) {
+  const tenantId = explicitTenantId ?? getOfflineTenantScope();
   const nextItem: OfflineQueueItem = {
     ...item,
+    tenantId: tenantId ?? undefined,
     id: createOfflineTempId(),
     createdAt: new Date().toISOString(),
     attempts: 0,
   };
 
-  const queue = readOfflineQueue();
+  if (!tenantId) {
+    return nextItem;
+  }
+
+  const key = resolveScopedQueueKey(tenantId);
+  if (!key) return nextItem;
+
+  const queue = readOfflineQueue(tenantId);
   queue.push(nextItem);
-  writeJson(OFFLINE_QUEUE_KEY, queue);
+  writeJson(key, queue);
   emitQueueChange();
   return nextItem;
 }
@@ -207,8 +320,13 @@ export async function flushOfflineQueue(): Promise<FlushResult> {
     return { processed: 0, failed: 0, remaining: 0 };
   }
 
+  const tenantId = getOfflineTenantScope();
+  if (!tenantId) {
+    return { processed: 0, failed: 0, remaining: 0 };
+  }
+
   if (!navigator.onLine) {
-    return { processed: 0, failed: 0, remaining: getOfflineQueueCount() };
+    return { processed: 0, failed: 0, remaining: getOfflineQueueCount(tenantId) };
   }
 
   if (activeFlush) {
@@ -216,29 +334,64 @@ export async function flushOfflineQueue(): Promise<FlushResult> {
   }
 
   activeFlush = (async () => {
-    const queue = readOfflineQueue();
-    const customerMappings = readCustomerMappings();
+    const queue = readOfflineQueue(tenantId);
+    const key = resolveScopedQueueKey(tenantId);
+    if (!key || queue.length === 0) {
+      return { processed: 0, failed: 0, remaining: 0 };
+    }
+
+    const customerMappings = readCustomerMappings(tenantId);
     const nextQueue: OfflineQueueItem[] = [];
     let processed = 0;
     let failed = 0;
+    let abortRemaining = false;
 
     for (const item of queue) {
-      const result = await replayQueueItem(item, customerMappings);
+      if (abortRemaining) {
+        nextQueue.push(item);
+        continue;
+      }
+
+      // Protection anti-boucle infinie sur erreurs 4xx permanentes (validation/droits)
+      if (item.permanentFailure && (item.attempts ?? 0) >= MAX_PERMANENT_FAILURE_ATTEMPTS) {
+        nextQueue.push(item);
+        continue;
+      }
+
+      // Défense supplémentaire contre toute fuite inter-tenant
+      if (item.tenantId && item.tenantId !== tenantId) {
+        continue;
+      }
+
+      const result = await replayQueueItem(item, tenantId, customerMappings);
 
       if (result.status === "processed") {
         processed += 1;
         continue;
       }
 
+      if (result.status === "unauthorized") {
+        abortRemaining = true;
+        nextQueue.push({
+          ...item,
+          lastError: result.error,
+        });
+        continue;
+      }
+
       failed += 1;
+      const nextAttempts = (item.attempts ?? 0) + 1;
       nextQueue.push({
         ...item,
-        attempts: (item.attempts ?? 0) + 1,
+        attempts: nextAttempts,
         lastError: result.error,
+        permanentFailure: Boolean(
+          result.isPermanent4xx && nextAttempts >= MAX_PERMANENT_FAILURE_ATTEMPTS
+        ),
       });
     }
 
-    writeJson(OFFLINE_QUEUE_KEY, nextQueue);
+    writeJson(key, nextQueue);
     emitQueueChange();
     return {
       processed,
@@ -254,9 +407,13 @@ export async function flushOfflineQueue(): Promise<FlushResult> {
   }
 }
 
-export function removeOfflineQueueItem(id: string) {
-  const queue = readOfflineQueue().filter((item) => item.id !== id);
-  writeJson(OFFLINE_QUEUE_KEY, queue);
+export function removeOfflineQueueItem(id: string, explicitTenantId?: string | null) {
+  const tenantId = explicitTenantId ?? getOfflineTenantScope();
+  if (!tenantId) return;
+  const key = resolveScopedQueueKey(tenantId);
+  if (!key) return;
+  const queue = readOfflineQueue(tenantId).filter((item) => item.id !== id);
+  writeJson(key, queue);
   emitQueueChange();
 }
 

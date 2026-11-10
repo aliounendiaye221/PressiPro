@@ -2,15 +2,10 @@ import { NextRequest } from "next/server";
 
 /**
  * Extrait l'adresse IP réelle du client depuis les headers HTTP.
- * Supporte Vercel, nginx (x-real-ip) et les proxies standards (x-forwarded-for).
- * Utilise le hop le plus à droite comme source la plus fiable.
+ * Priorise l'en-tête injecté par l'infrastructure Vercel (`x-vercel-forwarded-for`, non falsifiable côté client),
+ * puis `x-real-ip`, puis le dernier hop de `x-forwarded-for`.
  */
 export function getClientIp(request: NextRequest): string {
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp?.trim()) {
-    return realIp.trim();
-  }
-
   const vercelForwardedFor = request.headers.get("x-vercel-forwarded-for");
   if (vercelForwardedFor) {
     const candidates = vercelForwardedFor
@@ -22,6 +17,11 @@ export function getClientIp(request: NextRequest): string {
     }
   }
 
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp?.trim()) {
+    return realIp.trim();
+  }
+
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
     const candidates = forwardedFor
@@ -29,7 +29,6 @@ export function getClientIp(request: NextRequest): string {
       .map((ip) => ip.trim())
       .filter(Boolean);
     if (candidates.length > 0) {
-      // Le hop le plus à droite est plus fiable en présence de plusieurs proxies.
       return candidates[candidates.length - 1] || "unknown";
     }
   }

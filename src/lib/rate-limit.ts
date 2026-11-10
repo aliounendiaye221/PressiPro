@@ -1,25 +1,28 @@
 /**
  * Rate Limiter — Dual-mode (Upstash Redis or In-Memory fallback)
- *
- * • Production (Vercel): Uses @upstash/ratelimit + Upstash Redis.
- *   Requires env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN.
- *
- * • Development / single-instance: Falls back to an in-memory Map.
- *   The Map resets per process, which is fine for local dev.
- *
- * The public API is unchanged — callers use `checkRateLimit()`.
  */
-
-// ---------------------------------------------------------------------------
-// In-Memory fallback (dev / single instance)
-// ---------------------------------------------------------------------------
 
 type RateLimitRecord = {
   count: number;
   resetAt: number;
 };
 
+const MAX_MEMORY_BUCKETS = 5_000;
 const buckets = new Map<string, RateLimitRecord>();
+
+function pruneMemoryBuckets(now: number) {
+  if (buckets.size < MAX_MEMORY_BUCKETS) return;
+  for (const [k, record] of buckets) {
+    if (record.resetAt <= now) {
+      buckets.delete(k);
+    }
+  }
+  while (buckets.size >= MAX_MEMORY_BUCKETS) {
+    const oldestKey = buckets.keys().next().value;
+    if (oldestKey === undefined) break;
+    buckets.delete(oldestKey);
+  }
+}
 
 export type RateLimitResult = {
   allowed: boolean;
@@ -36,6 +39,9 @@ function checkRateLimitInMemory(
   const current = buckets.get(key);
 
   if (!current || current.resetAt <= now) {
+    if (!current) {
+      pruneMemoryBuckets(now);
+    }
     buckets.set(key, {
       count: 1,
       resetAt: now + windowMs,
@@ -65,10 +71,6 @@ function checkRateLimitInMemory(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Upstash Redis (production / serverless)
-// ---------------------------------------------------------------------------
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let upstashLimiterCache: Map<string, { limiter: any; windowMs: number; limit: number }> | null = null;
 
@@ -81,10 +83,6 @@ function getUpstashEnv() {
   return null;
 }
 
-/**
- * Lazily build an Upstash Ratelimit instance per (limit, windowMs) pair.
- * Instances are cached so we don't create a new one per request.
- */
 async function getUpstashLimiter(limit: number, windowMs: number) {
   const env = getUpstashEnv();
   if (!env) return null;
@@ -112,35 +110,20 @@ async function getUpstashLimiter(limit: number, windowMs: number) {
     upstashLimiterCache.set(cacheKey, { limiter, windowMs, limit });
     return limiter;
   } catch {
-    // If Upstash packages are not available, fall back silently.
     return null;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/**
- * Check whether a request identified by `key` is within the rate limit.
- *
- * @param key     Unique key (e.g. `auth:login:ip:1.2.3.4`)
- * @param limit   Max number of requests allowed in the window
- * @param windowMs  Window size in milliseconds
- * @param now     Current timestamp (useful for deterministic tests)
- */
 export async function checkRateLimit(
   key: string,
   limit: number,
   windowMs: number,
   now?: number
 ): Promise<RateLimitResult> {
-  // If a timestamp is provided (tests), always use in-memory.
   if (now !== undefined) {
     return checkRateLimitInMemory(key, limit, windowMs, now);
   }
 
-  // Try Upstash first.
   const upstash = await getUpstashLimiter(limit, windowMs);
   if (upstash) {
     try {
@@ -153,18 +136,13 @@ export async function checkRateLimit(
           : Math.max(1, Math.ceil((result.reset - Date.now()) / 1000)),
       };
     } catch {
-      // Upstash call failed — fall through to in-memory.
+      // Upstash call failed — fall through to bounded in-memory limiter.
     }
   }
 
-  // Fallback to in-memory.
   return checkRateLimitInMemory(key, limit, windowMs);
 }
 
-/**
- * Synchronous rate limit check — always in-memory.
- * Used by callers that cannot be async (kept for backward compatibility).
- */
 export function checkRateLimitSync(
   key: string,
   limit: number,
@@ -174,7 +152,6 @@ export function checkRateLimitSync(
   return checkRateLimitInMemory(key, limit, windowMs, now);
 }
 
-// Used by tests to keep them deterministic.
 export function clearRateLimitBuckets() {
   buckets.clear();
 }

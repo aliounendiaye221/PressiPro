@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   Search,
   PlusCircle,
-  Package,
   ChevronLeft,
   ChevronRight,
   Filter,
@@ -14,16 +14,22 @@ import {
   QrCode,
   List,
   LayoutGrid,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatOfflineCacheTime, readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
-import { QrScannerModal } from "@/components/qr-scanner-modal";
 import { normalizePhoneForWhatsApp } from "@/lib/phone";
 import { useAuth } from "@/components/auth-provider";
 import { SwipeableOrderCard } from "@/components/swipeable-order-card";
 import { OrdersKanban } from "@/components/orders-kanban";
 import { PullToRefresh } from "@/components/pull-to-refresh";
 import { actionFeedback, triggerHaptic } from "@/lib/feedback";
+
+const QrScannerModal = dynamic(
+  () => import("@/components/qr-scanner-modal").then((mod) => mod.QrScannerModal),
+  { ssr: false }
+);
 
 interface Order {
   id: string;
@@ -63,8 +69,9 @@ function paymentBadge(total: number, paid: number) {
 
 function OrdersContent() {
   const searchParams = useSearchParams();
-  const { tenant } = useAuth();
+  const { user, tenant } = useAuth();
   const router = useRouter();
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
   const initialStatus = searchParams.get("status") || "";
   const initialUnpaid = searchParams.get("unpaid") === "true";
@@ -86,8 +93,8 @@ function OrdersContent() {
   const [cacheUpdatedAt, setCacheUpdatedAt] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const [statusError, setStatusError] = useState("");
 
-  // Sync state if URL query params change
   useEffect(() => {
     setStatusFilter(searchParams.get("status") || "");
     setUnpaidFilter(searchParams.get("unpaid") === "true");
@@ -120,7 +127,6 @@ function OrdersContent() {
     if (lateFilter) params.set("late", "true");
     if (periodFilter) params.set("period", periodFilter);
     params.set("page", String(page));
-    // When in kanban mode, request more items so columns are full
     if (viewMode === "kanban") {
       params.set("limit", "50");
     }
@@ -178,7 +184,7 @@ function OrdersContent() {
 
   // Status transition handler for Drag & Drop and Swipe actions
   const handleStatusChange = async (orderId: string, newStatus: string) => {
-    // Optimistic update
+    setStatusError("");
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
     );
@@ -190,9 +196,14 @@ function OrdersContent() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        setStatusError(
+          errData?.error || "Impossible de modifier le statut de cette commande."
+        );
         fetchOrders();
       }
     } catch {
+      setStatusError("Erreur réseau lors de la mise à jour du statut.");
       fetchOrders();
     }
   };
@@ -278,6 +289,23 @@ function OrdersContent() {
           </div>
         )}
 
+        {statusError && (
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-300 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{statusError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatusError("")}
+              className="p-1 text-red-500 hover:text-red-700 rounded-lg"
+              aria-label="Fermer l'alerte"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Commandes</h1>
@@ -289,7 +317,7 @@ function OrdersContent() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* View Mode Toggle: Liste vs Kanban (Item 7) */}
+            {/* View Mode Toggle: Liste vs Kanban */}
             <div className="bg-gray-100 dark:bg-slate-800 p-1 rounded-xl flex items-center border border-gray-200/80 dark:border-slate-700">
               <button
                 type="button"
@@ -355,13 +383,13 @@ function OrdersContent() {
               actionFeedback("tap");
               try {
                 const parsed = new URL(url);
-                if (parsed.pathname.startsWith('/orders/')) {
+                if (parsed.pathname.startsWith("/orders/")) {
                   router.push(parsed.pathname);
                 } else {
                   router.push(`/orders?q=${encodeURIComponent(url)}`);
                 }
               } catch {
-                if (url.startsWith('cm') || url.startsWith('cl') || url.length > 20) {
+                if (url.startsWith("cm") || url.startsWith("cl") || url.length > 20) {
                   router.push(`/orders/${url}`);
                 } else {
                   router.push(`/orders?q=${encodeURIComponent(url)}`);
@@ -408,7 +436,10 @@ function OrdersContent() {
               placeholder="Rechercher (code, nom, tél.)..."
               className="input-field pl-10"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
             />
           </div>
           {viewMode === "list" && (
@@ -454,15 +485,14 @@ function OrdersContent() {
             </p>
           </div>
         ) : viewMode === "kanban" ? (
-          /* Kanban Drag & Drop View (Audit item 7) */
           <OrdersKanban
             orders={orders}
+            canRollback={isAdmin}
             onStatusChange={handleStatusChange}
             onWhatsApp={openWhatsApp}
             paymentBadge={paymentBadge}
           />
         ) : (
-          /* List View with Touch Swipe Actions (Audit item 14) */
           <>
             <div className="grid gap-3">
               {orders.map((order) => (

@@ -35,12 +35,15 @@ export async function requireSession(): Promise<SessionPayload> {
   if (!session) {
     throw new Error("UNAUTHORIZED");
   }
-  // Verify user still exists, is active, and belongs to the session tenant.
+  // Verify user still exists, is active, belongs to the session tenant, and sync live role/name/email.
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
     select: {
       active: true,
       tenantId: true,
+      role: true,
+      name: true,
+      email: true,
       tenant: { select: { active: true } },
     },
   });
@@ -50,11 +53,17 @@ export async function requireSession(): Promise<SessionPayload> {
   }
 
   // Tenant deactivation blocks all non-super-admin sessions on every protected route.
-  if (session.role !== "SUPER_ADMIN" && !user.tenant.active) {
+  if (user.role !== "SUPER_ADMIN" && !user.tenant.active) {
     throw new Error("UNAUTHORIZED");
   }
 
-  return session;
+  return {
+    userId: session.userId,
+    tenantId: user.tenantId,
+    role: user.role,
+    name: user.name,
+    email: user.email,
+  };
 }
 
 export {

@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Truck,
   MessageCircle,
+  ArrowLeft,
   ArrowRight,
   Package,
   User,
@@ -40,6 +41,7 @@ const KANBAN_COLUMNS = [
     bg: "bg-blue-50 dark:bg-blue-950/40",
     border: "border-blue-200 dark:border-blue-900/60",
     badge: "badge-glow-blue",
+    prevStatus: null,
     nextStatus: "TRAITEMENT",
     nextLabel: "Lancer traitement",
   },
@@ -51,6 +53,7 @@ const KANBAN_COLUMNS = [
     bg: "bg-amber-50 dark:bg-amber-950/40",
     border: "border-amber-200 dark:border-amber-900/60",
     badge: "badge-glow-amber",
+    prevStatus: "RECU",
     nextStatus: "PRET",
     nextLabel: "Marquer prêt",
   },
@@ -62,6 +65,7 @@ const KANBAN_COLUMNS = [
     bg: "bg-emerald-50 dark:bg-emerald-950/40",
     border: "border-emerald-200 dark:border-emerald-900/60",
     badge: "badge-glow-emerald",
+    prevStatus: "TRAITEMENT",
     nextStatus: "LIVRE",
     nextLabel: "Marquer livré",
   },
@@ -73,6 +77,7 @@ const KANBAN_COLUMNS = [
     bg: "bg-gray-50 dark:bg-slate-800/60",
     border: "border-gray-200 dark:border-slate-800",
     badge: "badge-glow-gray",
+    prevStatus: "PRET",
     nextStatus: null,
     nextLabel: null,
   },
@@ -80,6 +85,7 @@ const KANBAN_COLUMNS = [
 
 interface OrdersKanbanProps {
   orders: Order[];
+  canRollback?: boolean;
   onStatusChange: (orderId: string, newStatus: string) => Promise<void> | void;
   onWhatsApp: (e: React.MouseEvent, order: Order) => void;
   paymentBadge: (total: number, paid: number) => React.ReactNode;
@@ -87,6 +93,7 @@ interface OrdersKanbanProps {
 
 export function OrdersKanban({
   orders,
+  canRollback = false,
   onStatusChange,
   onWhatsApp,
   paymentBadge,
@@ -140,7 +147,7 @@ export function OrdersKanban({
             onDragOver={(e) => handleDragOver(e, col.key)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, col.key)}
-            className={`rounded-2xl border transition-all duration-200 flex flex-col min-h-[520px] ${
+            className={`rounded-2xl border transition-all duration-200 flex flex-col min-h-[340px] md:min-h-[520px] ${
               isTarget
                 ? "border-primary-500 bg-primary-50/20 dark:bg-primary-950/20 ring-2 ring-primary-500/20"
                 : "border-gray-200/80 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50"
@@ -167,11 +174,11 @@ export function OrdersKanban({
             </div>
 
             {/* Droppable orders list */}
-            <div className="p-3 space-y-2.5 flex-1 overflow-y-auto max-h-[75vh]">
+            <div className="p-3 space-y-2.5 flex-1 overflow-y-auto max-h-[75vh]" data-no-ptr="true">
               {columnOrders.length === 0 ? (
-                <div className="h-40 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 dark:border-slate-800 rounded-xl text-gray-400 dark:text-slate-600 text-xs">
+                <div className="h-32 md:h-40 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 dark:border-slate-800 rounded-xl text-gray-400 dark:text-slate-600 text-xs">
                   <Package className="w-6 h-6 mb-1.5 opacity-40" />
-                  <span>Glisser une commande ici</span>
+                  <span>Aucune commande dans cette colonne</span>
                 </div>
               ) : (
                 columnOrders.map((order) => {
@@ -184,14 +191,14 @@ export function OrdersKanban({
                       key={order.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, order.id)}
-                      className={`card p-3.5 bg-white dark:bg-slate-900 border border-gray-200/70 dark:border-slate-800 rounded-xl shadow-xs hover:shadow-md transition-all cursor-grab active:cursor-grabbing ${
+                      className={`card p-3.5 bg-white dark:bg-slate-900 border border-gray-200/70 dark:border-slate-800 rounded-xl shadow-xs hover:shadow-md transition-all md:cursor-grab md:active:cursor-grabbing ${
                         isDragging ? "opacity-50 scale-95" : ""
                       }`}
                     >
                       {/* Top row: Code + Drag handle + Pay badge */}
                       <div className="flex items-center justify-between gap-1.5 mb-2">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <GripVertical className="w-3.5 h-3.5 text-gray-300 dark:text-slate-600 shrink-0" />
+                          <GripVertical className="hidden md:block w-3.5 h-3.5 text-gray-300 dark:text-slate-600 shrink-0" />
                           <Link
                             href={`/orders/${order.id}`}
                             className="font-mono font-bold text-xs text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 truncate"
@@ -221,8 +228,8 @@ export function OrdersKanban({
                         {order.items.map((i) => `${i.name} ×${i.quantity}`).join(", ")}
                       </p>
 
-                      {/* Footer: Amount & Action button */}
-                      <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-slate-800/80">
+                      {/* Footer: Amount & Touch/Click Action buttons */}
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-slate-800/80 gap-2">
                         <div>
                           <p className="font-bold text-xs text-gray-900 dark:text-white">
                             {formatFCFA(order.totalAmount)}
@@ -235,7 +242,6 @@ export function OrdersKanban({
                         </div>
 
                         <div className="flex items-center gap-1">
-                          {/* WhatsApp shortcut */}
                           {(isReady || isUnpaid) && (
                             <button
                               type="button"
@@ -247,7 +253,20 @@ export function OrdersKanban({
                             </button>
                           )}
 
-                          {/* Quick advance status */}
+                          {canRollback && col.prevStatus && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                actionFeedback("status");
+                                onStatusChange(order.id, col.prevStatus!);
+                              }}
+                              title="Revenir à l'étape précédente"
+                              className="p-1.5 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+                            >
+                              <ArrowLeft className="w-3 h-3" />
+                            </button>
+                          )}
+
                           {col.nextStatus && (
                             <button
                               type="button"
@@ -256,9 +275,9 @@ export function OrdersKanban({
                                 onStatusChange(order.id, col.nextStatus!);
                               }}
                               title={col.nextLabel || "Avancer"}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-primary-50 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/60 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-primary-50 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/60 rounded-lg text-[10px] font-bold transition-all active:scale-95"
                             >
-                              <span>Avancer</span>
+                              <span>{col.nextLabel || "Avancer"}</span>
                               <ArrowRight className="w-3 h-3" />
                             </button>
                           )}

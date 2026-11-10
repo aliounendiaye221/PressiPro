@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck, Lock, KeyRound, Eye, EyeOff, Copy, Check, MessageSquare, AlertCircle, ShieldCheck, CreditCard } from "lucide-react";
+import { Package, Users, Plus, Trash2, Zap, Store, Phone, Smartphone, Save, CheckCircle, Weight, Pencil, X, UserX, UserCheck, Lock, KeyRound, Eye, EyeOff, Copy, Check, MessageSquare, AlertCircle, ShieldCheck, Sparkles, ExternalLink } from "lucide-react";
 import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { enqueueOfflineAction } from "@/lib/offline-queue";
 
@@ -96,6 +96,7 @@ export default function SettingsPage() {
   const [tenantSuccess, setTenantSuccess] = useState(false);
   const [tenantError, setTenantError] = useState("");
   const [tenantSyncMessage, setTenantSyncMessage] = useState("");
+  const [copiedStorefront, setCopiedStorefront] = useState(false);
 
   // Services
   const [services, setServices] = useState<Service[]>([]);
@@ -413,8 +414,8 @@ export default function SettingsPage() {
       setPwError("Veuillez renseigner votre mot de passe actuel");
       return;
     }
-    if (pwForm.newPassword.length < 6) {
-      setPwError("Le nouveau mot de passe doit comporter au moins 6 caractères");
+    if (pwForm.newPassword.length < 10) {
+      setPwError("Le nouveau mot de passe doit comporter au moins 10 caractères (majuscule, minuscule, chiffre et symbole)");
       return;
     }
     if (pwForm.newPassword !== pwForm.confirmPassword) {
@@ -448,7 +449,7 @@ export default function SettingsPage() {
   };
 
   const generateRandomPassword = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const chars = "23456789";
     let code = "";
     for (let i = 0; i < 6; i++) {
       code += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -466,8 +467,8 @@ export default function SettingsPage() {
 
   const handleAdminResetPassword = async () => {
     if (!resetModalUser) return;
-    if (!resetPasswordValue || resetPasswordValue.length < 6) {
-      setResetError("Le mot de passe doit contenir au moins 6 caractères");
+    if (!resetPasswordValue || resetPasswordValue.length < 10) {
+      setResetError("Le mot de passe doit contenir au moins 10 caractères (maj., min., chiffre et symbole)");
       return;
     }
     setResetLoading(true);
@@ -577,6 +578,64 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ) : null}
+
+              {/* Public Storefront Link Card */}
+              {tenant?.id && (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-200 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-teal-800 font-bold text-sm">
+                      <Sparkles className="w-4 h-4 text-teal-600" />
+                      <span>Votre Vitrine &amp; Simulateur de Prix Public</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-200/60 text-teal-900">
+                      En direct
+                    </span>
+                  </div>
+                  <p className="text-xs text-teal-900/80 leading-relaxed">
+                    Partagez ce lien sur votre statut WhatsApp, Instagram ou Google Maps. Vos clients peuvent estimer le coût de leur linge et vous envoyer une demande de collecte en 1 clic.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={typeof window !== "undefined" ? `${window.location.origin}/p/${tenant.id}` : `/p/${tenant.id}`}
+                      className="w-full text-xs font-mono bg-white px-3 py-2 rounded-xl border border-teal-200 text-teal-900 select-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== "undefined") {
+                          navigator.clipboard.writeText(`${window.location.origin}/p/${tenant.id}`);
+                          setCopiedStorefront(true);
+                          setTimeout(() => setCopiedStorefront(false), 2500);
+                        }
+                      }}
+                      className="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shrink-0 flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      {copiedStorefront ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Copié</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copier</span>
+                        </>
+                      )}
+                    </button>
+                    <a
+                      href={`/p/${tenant.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 rounded-xl bg-white border border-teal-200 text-teal-700 hover:bg-teal-50 shrink-0"
+                      title="Ouvrir la vitrine"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div>
@@ -849,7 +908,7 @@ export default function SettingsPage() {
                 <input type="email" placeholder="Email *" className="input-field" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input type="password" placeholder="Mot de passe *" className="input-field" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
+                <input type="password" minLength={10} placeholder="Mot de passe * (min. 10 car., ex: Pressi#2026)" className="input-field" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
                 <select className="input-field" value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}>
                   <option value="AGENT">Agent</option>
                   <option value="ADMIN">Administrateur</option>
@@ -997,7 +1056,7 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={handleAdminResetPassword}
-                    disabled={resetLoading || !resetPasswordValue || resetPasswordValue.length < 6}
+                    disabled={resetLoading || !resetPasswordValue || resetPasswordValue.length < 10}
                     className="btn-primary text-xs"
                   >
                     {resetLoading ? "Enregistrement..." : "Confirmer la réinitialisation"}
@@ -1115,9 +1174,9 @@ export default function SettingsPage() {
                     <input
                       type={showNewPw ? "text" : "password"}
                       required
-                      minLength={6}
+                      minLength={10}
                       className="input-field pr-10"
-                      placeholder="Minimum 6 caractères"
+                      placeholder="Minimum 10 caractères"
                       value={pwForm.newPassword}
                       onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
                     />
@@ -1129,7 +1188,7 @@ export default function SettingsPage() {
                       {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  <p className="text-[11px] text-gray-500 mt-1">Au moins 6 caractères</p>
+                  <p className="text-[11px] text-gray-500 mt-1">Min. 10 caractères (majuscule, minuscule, chiffre et caractère spécial)</p>
                 </div>
 
                 <div>
@@ -1139,7 +1198,7 @@ export default function SettingsPage() {
                   <input
                     type={showNewPw ? "text" : "password"}
                     required
-                    minLength={6}
+                    minLength={10}
                     className="input-field"
                     placeholder="Répétez le nouveau mot de passe"
                     value={pwForm.confirmPassword}
@@ -1154,7 +1213,7 @@ export default function SettingsPage() {
               <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
-                  disabled={pwLoading || !pwForm.currentPassword || pwForm.newPassword.length < 6 || pwForm.newPassword !== pwForm.confirmPassword}
+                  disabled={pwLoading || !pwForm.currentPassword || pwForm.newPassword.length < 10 || pwForm.newPassword !== pwForm.confirmPassword}
                   className="btn-primary w-full sm:w-auto"
                 >
                   {pwLoading ? (

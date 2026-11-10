@@ -1,32 +1,37 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireTenantSession } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/rbac";
-import { createExpenseSchema } from "@/lib/validators";
-import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
+import { createExpenseSchema, expenseCategoryEnum } from "@/lib/validators";
+import { handleApiError, successResponse } from "@/lib/api-utils";
 import { parsePagination } from "@/lib/pagination";
 import { auditLog } from "@/lib/audit";
+import type { ExpenseCategory, PaymentMethod, Prisma } from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
     const session = await requireAdmin();
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get("q") || "";
-    const category = searchParams.get("category") || "";
+    const search = searchParams.get("q")?.trim() || "";
+    const categoryParam = searchParams.get("category") || "";
     const monthStr = searchParams.get("month") || ""; // Format: YYYY-MM
     const { page, limit } = parsePagination(searchParams, { maxLimit: 100 });
 
-    const where: any = { tenantId: session.tenantId };
+    const where: Prisma.ExpenseWhereInput = { tenantId: session.tenantId };
 
-    if (category) {
-      where.category = category;
+    if (categoryParam) {
+      const parsedCategory = expenseCategoryEnum.safeParse(categoryParam);
+      if (parsedCategory.success) {
+        where.category = parsedCategory.data as ExpenseCategory;
+      }
     }
 
     if (monthStr && /^\d{4}-\d{2}$/.test(monthStr)) {
       const [year, month] = monthStr.split("-").map(Number);
-      const startOfMonth = new Date(year, month - 1, 1);
-      const endOfMonth = new Date(year, month, 1);
-      where.date = { gte: startOfMonth, lt: endOfMonth };
+      if (month >= 1 && month <= 12) {
+        const startOfMonth = new Date(year, month - 1, 1);
+        const endOfMonth = new Date(year, month, 1);
+        where.date = { gte: startOfMonth, lt: endOfMonth };
+      }
     }
 
     if (search) {
@@ -74,11 +79,11 @@ export async function POST(request: NextRequest) {
     const expense = await prisma.expense.create({
       data: {
         tenantId: session.tenantId,
-        category: data.category as any,
+        category: data.category as ExpenseCategory,
         description: data.description.trim(),
         amount: data.amount,
         date: expenseDate,
-        paymentMethod: data.paymentMethod as any,
+        paymentMethod: data.paymentMethod as PaymentMethod,
         supplier: data.supplier ? data.supplier.trim() : null,
         notes: data.notes ? data.notes.trim() : null,
         createdBy: session.userId,

@@ -4,9 +4,23 @@ import { requireAdmin } from "@/lib/rbac";
 import { handleApiError, successResponse } from "@/lib/api-utils";
 
 const MONTH_NAMES = [
-  "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+  "Janvier",
+  "Février",
+  "Mars",
+  "Avril",
+  "Mai",
+  "Juin",
+  "Juillet",
+  "Août",
+  "Septembre",
+  "Octobre",
+  "Novembre",
+  "Décembre",
 ];
+
+function formatMonthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +29,7 @@ export async function GET(request: NextRequest) {
     const tenantId = session.tenantId;
 
     const now = new Date();
-    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const currentMonthKey = formatMonthKey(now);
     const selectedMonthKey = searchParams.get("month") || currentMonthKey;
 
     let targetYear = now.getFullYear();
@@ -23,74 +37,90 @@ export async function GET(request: NextRequest) {
 
     if (/^\d{4}-\d{2}$/.test(selectedMonthKey)) {
       const [y, m] = selectedMonthKey.split("-").map(Number);
-      targetYear = y;
-      targetMonth = m - 1;
+      if (m >= 1 && m <= 12) {
+        targetYear = y;
+        targetMonth = m - 1;
+      }
     }
 
     const startOfSelectedMonth = new Date(targetYear, targetMonth, 1);
     const endOfSelectedMonth = new Date(targetYear, targetMonth + 1, 1);
+    const startOfSixMonthsWindow = new Date(targetYear, targetMonth - 5, 1);
 
-    // Run queries for selected month
-    const [revenueAgg, expenseAgg, categoryGroup] = await Promise.all([
-      // Total Revenue collected in this month
-      prisma.payment.aggregate({
-        where: {
-          tenantId,
-          createdAt: { gte: startOfSelectedMonth, lt: endOfSelectedMonth },
-        },
-        _sum: { amount: true },
-        _count: true,
-      }),
+    // 5 requêtes parallèles au lieu de 15 requêtes séquentielles N+1
+    const [revenueAgg, expenseAgg, categoryGroup, sixMonthsPayments, sixMonthsExpenses] =
+      await Promise.all([
+        prisma.payment.aggregate({
+          where: {
+            tenantId,
+            order: { deletedAt: null },
+            createdAt: { gte: startOfSelectedMonth, lt: endOfSelectedMonth },
+          },
+          _sum: { amount: true },
+          _count: true,
+        }),
 
-      // Total Expenses in this month
-      prisma.expense.aggregate({
-        where: {
-          tenantId,
-          date: { gte: startOfSelectedMonth, lt: endOfSelectedMonth },
-        },
-        _sum: { amount: true },
-        _count: true,
-      }),
+        prisma.expense.aggregate({
+          where: {
+            tenantId,
+            date: { gte: startOfSelectedMonth, lt: endOfSelectedMonth },
+          },
+          _sum: { amount: true },
+          _count: true,
+        }),
 
-      // Expenses by category
-      prisma.expense.groupBy({
-        by: ["category"],
-        where: {
-          tenantId,
-          date: { gte: startOfSelectedMonth, lt: endOfSelectedMonth },
-        },
-        _sum: { amount: true },
-        _count: true,
-      }),
-    ]);
+        prisma.expense.groupBy({
+          by: ["category"],
+          where: {
+            tenantId,
+            date: { gte: startOfSelectedMonth, lt: endOfSelectedMonth },
+          },
+          _sum: { amount: true },
+          _count: true,
+        }),
+
+        prisma.payment.findMany({
+          where: {
+            tenantId,
+            order: { deletedAt: null },
+            createdAt: { gte: startOfSixMonthsWindow, lt: endOfSelectedMonth },
+          },
+          select: { amount: true, createdAt: true },
+        }),
+
+        prisma.expense.findMany({
+          where: {
+            tenantId,
+            date: { gte: startOfSixMonthsWindow, lt: endOfSelectedMonth },
+          },
+          select: { amount: true, date: true },
+        }),
+      ]);
 
     const revenue = revenueAgg._sum.amount || 0;
     const expenses = expenseAgg._sum.amount || 0;
     const netProfit = revenue - expenses;
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
 
-    // Monthly historical comparison (last 6 months)
+    const revByMonth = new Map<string, number>();
+    for (const p of sixMonthsPayments) {
+      const key = formatMonthKey(new Date(p.createdAt));
+      revByMonth.set(key, (revByMonth.get(key) || 0) + p.amount);
+    }
+
+    const expByMonth = new Map<string, number>();
+    for (const e of sixMonthsExpenses) {
+      const key = formatMonthKey(new Date(e.date));
+      expByMonth.set(key, (expByMonth.get(key) || 0) + e.amount);
+    }
+
     const monthlyComparison = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(targetYear, targetMonth - i, 1);
-      const mStart = new Date(d.getFullYear(), d.getMonth(), 1);
-      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-      const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const mKey = formatMonthKey(d);
       const mLabel = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
-
-      const [mRev, mExp] = await Promise.all([
-        prisma.payment.aggregate({
-          where: { tenantId, createdAt: { gte: mStart, lt: mEnd } },
-          _sum: { amount: true },
-        }),
-        prisma.expense.aggregate({
-          where: { tenantId, date: { gte: mStart, lt: mEnd } },
-          _sum: { amount: true },
-        }),
-      ]);
-
-      const rev = mRev._sum.amount || 0;
-      const exp = mExp._sum.amount || 0;
+      const rev = revByMonth.get(mKey) || 0;
+      const exp = expByMonth.get(mKey) || 0;
       const profit = rev - exp;
 
       monthlyComparison.push({
@@ -103,17 +133,17 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Format category breakdown
     const categoryBreakdown = categoryGroup.map((item) => ({
       category: item.category,
       amount: item._sum.amount || 0,
       count: item._count,
-      percentage: expenses > 0 ? Math.round(((item._sum.amount || 0) / expenses) * 100) : 0,
+      percentage:
+        expenses > 0 ? Math.round(((item._sum.amount || 0) / expenses) * 100) : 0,
     }));
 
     return successResponse({
-      month: selectedMonthKey,
-      monthLabel: `${MONTH_NAMES[targetMonth]} ${targetYear}`,
+      month: formatMonthKey(startOfSelectedMonth),
+      monthLabel: `${MONTH_NAMES[startOfSelectedMonth.getMonth()]} ${startOfSelectedMonth.getFullYear()}`,
       revenue,
       paymentCount: revenueAgg._count,
       expenses,

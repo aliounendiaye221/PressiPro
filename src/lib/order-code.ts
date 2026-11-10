@@ -4,18 +4,15 @@ import { prisma } from "./db";
  * Generates a short unique order code per tenant using an atomic counter.
  * Format: P-XXXXX (e.g., P-00042)
  *
- * Uses a single atomic SQL operation (UPDATE ... RETURNING) to avoid the
- * race condition inherent in a SELECT MAX + INSERT pattern.
- * The unique constraint @@unique([tenantId, code]) acts as a safety net,
- * but this approach prevents conflicts at the source.
+ * Uses a transaction-level PostgreSQL advisory lock per tenant + numeric MAX
+ * to serialize concurrent order creation without race conditions or P-99999 sorting bugs.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function generateOrderCode(tenantId: string, client?: any): Promise<string> {
   const db = client || prisma;
   try {
-    // Acquire a transaction-level advisory lock per tenant to serialize code generation under concurrency
     try {
-      await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
+      await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`order-code:${tenantId}`}))`;
     } catch {
       // Ignore if advisory locks are unsupported in current test/mock runtime
     }
@@ -40,23 +37,27 @@ export async function generateOrderCode(tenantId: string, client?: any): Promise
     const validNum = Number.isFinite(nextNum) && nextNum > 0 ? nextNum : 1;
     return `P-${String(validNum).padStart(5, "0")}`;
   } catch (error) {
-    console.error("[generateOrderCode] Raw query failed, falling back to prisma findFirst:", error);
-    const lastOrder = await db.order.findFirst({
+    console.error("[generateOrderCode] Raw query failed, falling back to numeric scan:", error);
+    const recentOrders = await db.order.findMany({
       where: {
         tenantId,
         code: { startsWith: "P-" },
       },
-      orderBy: { code: "desc" },
+      orderBy: { createdAt: "desc" },
+      take: 100,
       select: { code: true },
     });
 
-    let nextNum = 1;
-    if (lastOrder?.code) {
-      const match = lastOrder.code.match(/^P-(\d+)$/);
+    let maxNum = 0;
+    for (const order of recentOrders) {
+      const match = order.code?.match(/^P-(\d+)$/);
       if (match) {
-        nextNum = parseInt(match[1], 10) + 1;
+        const parsed = parseInt(match[1], 10);
+        if (Number.isFinite(parsed) && parsed > maxNum) {
+          maxNum = parsed;
+        }
       }
     }
-    return `P-${String(nextNum).padStart(5, "0")}`;
+    return `P-${String(maxNum + 1).padStart(5, "0")}`;
   }
 }

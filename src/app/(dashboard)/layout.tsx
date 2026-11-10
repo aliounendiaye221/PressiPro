@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/components/auth-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   ClipboardList,
@@ -185,7 +185,7 @@ function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
                 Abonnement
               </span>
               <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded-md bg-amber-500 text-white shadow-xs">
-                {(tenant as any)?.subscription || "FREE"}
+                {(tenant as { subscription?: string } | null)?.subscription || "FREE"}
               </span>
             </div>
             <Link
@@ -419,10 +419,17 @@ function ImpersonationBanner() {
 }
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { loading } = useAuth();
+  const { loading, user, tenant } = useAuth();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  if (loading) {
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, user, router]);
+
+  if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-950">
         <div className="relative w-12 h-12">
@@ -433,8 +440,15 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const brandVars = tenant?.brandPrimaryColor
+    ? ({ "--tenant-primary": tenant.brandPrimaryColor } as React.CSSProperties)
+    : undefined;
+
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 overflow-x-hidden transition-colors duration-200">
+    <div
+      style={brandVars}
+      className="min-h-screen flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 overflow-x-hidden transition-colors duration-200"
+    >
       <ImpersonationBanner />
       <MobileTopBar setMobileOpen={setMobileOpen} />
       <div className="flex-1 flex">

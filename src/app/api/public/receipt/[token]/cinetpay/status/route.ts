@@ -1,15 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyReceiptShareToken } from "@/lib/receipt-share";
-import { checkCinetPayTransaction, mapCinetPayMethod } from "@/lib/cinetpay";
+import {
+  checkCinetPayTransaction,
+  mapCinetPayMethod,
+  verifyOrderTransactionBinding,
+} from "@/lib/cinetpay";
+import { recordOnlineOrderPayment } from "@/lib/order-payment-reconcile";
 import { errorResponse, successResponse, handleApiError } from "@/lib/api-utils";
-import { auditLog } from "@/lib/audit";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
   try {
+    const clientIp = getClientIp(request);
+    const rate = await checkRateLimit(`public:cinetpay:status:${clientIp}`, 30, 60 * 1000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Trop de requêtes. Veuillez patienter un instant." },
+        { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
+      );
+    }
+
     const { token } = await params;
     const payload = await verifyReceiptShareToken(token);
 
@@ -18,10 +33,15 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    const transactionId = searchParams.get("tx");
+    const transactionId = searchParams.get("tx")?.trim();
 
     if (!transactionId) {
       return errorResponse("Identifiant de transaction manquant", 400);
+    }
+
+    // Interdire strictement l'utilisation d'un identifiant d'abonnement SUB-... sur une commande
+    if (!transactionId.startsWith("PPO-")) {
+      return errorResponse("Identifiant de transaction invalide pour cette commande", 400);
     }
 
     const order = await prisma.order.findFirst({
@@ -29,6 +49,7 @@ export async function GET(
         id: payload.orderId,
         tenantId: payload.tenantId,
         deletedAt: null,
+        tenant: { active: true },
       },
       select: {
         id: true,
@@ -46,7 +67,11 @@ export async function GET(
       return errorResponse("Commande introuvable", 404);
     }
 
-    // 1. Vérifier si un paiement pour cette transaction a déjà été enregistré
+    // Vérifier que ce transactionId appartient bien à cette commande (et ce tenant)
+    if (!verifyOrderTransactionBinding(transactionId, order, { allowLegacyUnbound: true })) {
+      return errorResponse("Cette transaction ne correspond pas à ce reçu", 403);
+    }
+
     const alreadyRecorded = order.payments.some((p: { note?: string | null }) =>
       p.note?.includes(transactionId)
     );
@@ -60,8 +85,9 @@ export async function GET(
       });
     }
 
-    // 2. Vérifier auprès de CinetPay
-    const checkResult = await checkCinetPayTransaction(transactionId, order.tenantId);
+    const checkResult = await checkCinetPayTransaction(transactionId, order.tenantId, {
+      allowSubscriptionShortcut: false,
+    });
 
     if (!checkResult.success || checkResult.status !== "ACCEPTED") {
       return successResponse({
@@ -71,61 +97,31 @@ export async function GET(
       });
     }
 
-    const paidAmountCinet = checkResult.amount || (order.totalAmount - order.paidAmount);
+    const paidAmountCinet =
+      checkResult.amount || Math.max(0, order.totalAmount - order.paidAmount);
     const paymentMethod = mapCinetPayMethod(checkResult.paymentMethod);
 
-    // 3. Enregistrer le paiement de manière idempotente dans une transaction Prisma
-    await prisma.$transaction(async (tx) => {
-      // Re-vérifier l'état dans la transaction
-      const currentOrder = await tx.order.findUnique({
-        where: { id: order.id },
-        select: { id: true, totalAmount: true, paidAmount: true },
-      });
-
-      if (!currentOrder) return;
-
-      const remaining = currentOrder.totalAmount - currentOrder.paidAmount;
-      const amountToRecord = Math.min(paidAmountCinet, Math.max(0, remaining));
-
-      if (amountToRecord <= 0) return;
-
-      const note = `Paiement en ligne CinetPay (${checkResult.paymentMethod || "Web"}) - Ref: ${transactionId}`;
-
-      await tx.payment.create({
-        data: {
-          tenantId: order.tenantId,
-          orderId: order.id,
-          amount: amountToRecord,
-          method: paymentMethod,
-          note,
-        },
-      });
-
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          paidAmount: { increment: amountToRecord },
-        },
-      });
-    });
-
-    await auditLog({
+    const outcome = await recordOnlineOrderPayment({
+      orderId: order.id,
       tenantId: order.tenantId,
-      action: "PAYMENT_CREATED",
-      entity: "Payment",
-      entityId: order.id,
-      details: {
-        provider: "CINETPAY",
-        transactionId,
-        amount: paidAmountCinet,
-        paymentMethod,
+      transactionId,
+      amountPaid: paidAmountCinet,
+      method: paymentMethod,
+      note: `Paiement en ligne CinetPay (${checkResult.paymentMethod || "Web"}) - Ref: ${transactionId}`,
+      auditProvider: "CINETPAY",
+      auditExtra: {
+        operatorId: checkResult.operatorId,
       },
     });
+
+    if (outcome.status === "CONFLICT_OTHER_ORDER") {
+      return errorResponse("Cette transaction est déjà associée à une autre commande", 409);
+    }
 
     return successResponse({
       status: "ACCEPTED",
       recorded: true,
-      amount: paidAmountCinet,
+      amount: outcome.status === "RECORDED" ? outcome.amountRecorded : paidAmountCinet,
     });
   } catch (error) {
     return handleApiError(error);

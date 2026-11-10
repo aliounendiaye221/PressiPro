@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { triggerHaptic } from "@/lib/feedback";
-import { CreditCard, Wallet, Smartphone, Banknote, HelpCircle } from "lucide-react";
+import { CreditCard, Wallet, Smartphone, Banknote } from "lucide-react";
 
 export interface DonutSegment {
   id: string;
@@ -43,6 +43,8 @@ export function ModernDonutChart({
   formatValue = defaultFormatFCFA,
 }: ModernDonutChartProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const rawFilterId = useId();
+  const filterId = `donut-glow-${rawFilterId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   const total = segments.reduce((sum, s) => sum + Math.max(0, s.value), 0);
 
@@ -120,7 +122,7 @@ export function ModernDonutChart({
                   className="rotate-[-90deg] overflow-visible"
                 >
                   <defs>
-                    <filter id="donut-glow" x="-20%" y="-20%" width="140%" height="140%">
+                    <filter id={filterId} x="-20%" y="-20%" width="140%" height="140%">
                       <feGaussianBlur stdDeviation="3" result="blur" />
                       <feComposite in="SourceGraphic" in2="blur" operator="over" />
                     </filter>
@@ -153,7 +155,7 @@ export function ModernDonutChart({
                         strokeDashoffset={-seg.offset}
                         strokeLinecap="round"
                         className="transition-all duration-200 cursor-pointer"
-                        filter={isHovered ? "url(#donut-glow)" : undefined}
+                        filter={isHovered ? `url(#${filterId})` : undefined}
                         onMouseEnter={() => {
                           triggerHaptic("light");
                           setHoveredId(seg.id);

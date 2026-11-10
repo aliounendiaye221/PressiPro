@@ -19,34 +19,45 @@ export async function PUT(
     const data = updateOrderStatusSchema.parse(body);
     const newStatus = data.status as OrderStatus;
 
-    const order = await prisma.order.findFirst({
-      where: { id, tenantId: session.tenantId, deletedAt: null },
-    });
-
-    if (!order) {
-      return errorResponse("Commande introuvable", 404);
-    }
-
-    if (!canTransition(order.status, newStatus)) {
-      return errorResponse(
-        `Transition ${order.status} → ${newStatus} non autorisée`,
-        400
-      );
-    }
-
-    // Rollback requires ADMIN or SUPER_ADMIN
-    if (
-      isRollback(order.status, newStatus) &&
-      session.role !== "ADMIN" &&
-      session.role !== "SUPER_ADMIN"
-    ) {
-      return errorResponse(
-        "Seul un administrateur ou un super-administrateur peut annuler un statut",
-        403
-      );
-    }
+    let transitionError: { message: string; status: number } | null = null;
+    let previousStatus: OrderStatus | null = null;
 
     const updated = await prisma.$transaction(async (tx) => {
+      const locked = (await tx.$queryRaw`
+        SELECT id, status
+        FROM "Order"
+        WHERE id = ${id} AND "tenantId" = ${session.tenantId} AND "deletedAt" IS NULL
+        FOR UPDATE
+      `) as Array<{ id: string; status: OrderStatus }>;
+
+      const currentOrder = locked?.[0];
+      if (!currentOrder) {
+        transitionError = { message: "Commande introuvable", status: 404 };
+        return null;
+      }
+
+      previousStatus = currentOrder.status;
+
+      if (!canTransition(currentOrder.status, newStatus)) {
+        transitionError = {
+          message: `Transition ${currentOrder.status} → ${newStatus} non autorisée`,
+          status: 400,
+        };
+        return null;
+      }
+
+      if (
+        isRollback(currentOrder.status, newStatus) &&
+        session.role !== "ADMIN" &&
+        session.role !== "SUPER_ADMIN"
+      ) {
+        transitionError = {
+          message: "Seul un administrateur ou un super-administrateur peut annuler un statut",
+          status: 403,
+        };
+        return null;
+      }
+
       const p = tx as typeof prisma;
       const updatedOrder = await p.order.update({
         where: { id },
@@ -56,7 +67,7 @@ export async function PUT(
       await p.orderStatusHistory.create({
         data: {
           orderId: id,
-          fromStatus: order.status,
+          fromStatus: currentOrder.status,
           toStatus: newStatus,
           changedBy: session.userId,
           note: data.note || null,
@@ -66,17 +77,26 @@ export async function PUT(
       return updatedOrder;
     });
 
+    if (transitionError) {
+      const err: { message: string; status: number } = transitionError;
+      return errorResponse(err.message, err.status);
+    }
+
+    if (!updated) {
+      return errorResponse("Commande introuvable", 404);
+    }
+
     await auditLog({
       tenantId: session.tenantId,
       userId: session.userId,
       action: "STATUS_CHANGE",
       entity: "Order",
       entityId: id,
-      details: { from: order.status, to: newStatus, note: data.note },
+      details: { from: previousStatus, to: newStatus, note: data.note },
     });
 
     if (newStatus === "PRET") {
-      await warmOrderReceiptPdf({
+      void warmOrderReceiptPdf({
         tenantId: session.tenantId,
         orderId: id,
       }).catch((error) => {

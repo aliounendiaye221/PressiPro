@@ -24,6 +24,17 @@ MVP de gestion de pressing multi-tenant pour Rufisque/Dakar, construit avec Next
 - **Auth** : JWT (jose) + bcryptjs, cookies HttpOnly
 - **PDF** : @react-pdf/renderer (server-side)
 - **QR Code** : qrcode (Node.js)
+- **Mobile Natif** : Capacitor 8 (Android Play Store & Apple App Store)
+
+## Applications Mobiles (Google Play Store & Apple App Store)
+
+PressiPro inclut les conteneurs natifs Android et iOS pré-configurés pour la publication sur les stores :
+- **ID de l'application** : `com.pressipro.app`
+- **Synchroniser** : `npm run cap:sync`
+- **Ouvrir sous Android Studio** : `npm run cap:open:android`
+- **Ouvrir sous Xcode (Mac)** : `npm run cap:open:ios`
+- **Générer le bundle Play Store (.aab)** : `npm run cap:bundle:android`
+- **Guide pas à pas de publication** : Voir [docs/guide-publication-playstore-appstore.md](docs/guide-publication-playstore-appstore.md)
 
 ## Setup
 

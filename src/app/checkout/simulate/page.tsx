@@ -20,17 +20,37 @@ function formatFCFA(n: number) {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
 }
 
+function sanitizeInternalReturnPath(raw: string | null): string {
+  if (!raw) return "/subscription";
+  const trimmed = raw.trim();
+  // Autorise une URL absolue uniquement si elle appartient à la même origine que la fenêtre courante
+  if (typeof window !== "undefined" && (trimmed.startsWith("https://") || trimmed.startsWith("http://"))) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.origin === window.location.origin) {
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    } catch {
+      return "/subscription";
+    }
+    return "/subscription";
+  }
+  // N'autorise que les chemins relatifs internes commençant par un seul '/'
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//") && !trimmed.includes("\\")) {
+    return trimmed;
+  }
+  return "/subscription";
+}
+
 function SimulateCheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
   const transactionId = searchParams.get("tx") || "SUB-TEST-0001";
-  const amountStr = searchParams.get("amount") || "15000";
-  const amount = parseInt(amountStr, 10) || 15000;
+  const amountStr = searchParams.get("amount") || "10000";
+  const amount = parseInt(amountStr, 10) || 10000;
   const description = searchParams.get("desc") || "Paiement PressiPro";
-  const returnUrl = searchParams.get("returnUrl") || "/subscription";
-  const notifyUrl = searchParams.get("notifyUrl") || "";
-  const customerName = searchParams.get("customerName") || "Gérant";
+  const returnUrl = sanitizeInternalReturnPath(searchParams.get("returnUrl"));
   const customerPhone = searchParams.get("customerPhone") || "+221770000000";
 
   const [selectedMethod, setSelectedMethod] = useState<"WAVE" | "OM" | "FREE" | "CARD">("WAVE");
@@ -52,7 +72,6 @@ function SimulateCheckoutContent() {
           amount,
           method: selectedMethod,
           status,
-          notifyUrl,
         }),
       });
 

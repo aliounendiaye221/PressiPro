@@ -13,6 +13,7 @@ export async function GET() {
   try {
     const session = await requireTenantSession();
     const tenantId = session.tenantId;
+    const isAdmin = session.role === "ADMIN" || session.role === "SUPER_ADMIN";
     const now = new Date();
 
     // Date ranges
@@ -25,7 +26,6 @@ export async function GET() {
     const endOfDay = new Date(startOfDay);
     endOfDay.setDate(endOfDay.getDate() + 1);
 
-    // Prior comparative periods
     const startOfYesterday = new Date(startOfDay);
     startOfYesterday.setDate(startOfYesterday.getDate() - 1);
 
@@ -34,7 +34,8 @@ export async function GET() {
 
     const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    // Execute queries in parallel for high performance
+    const activeOrderFilter = { deletedAt: null };
+
     const [
       revenueDay,
       revenueWeek,
@@ -43,7 +44,7 @@ export async function GET() {
       revenuePrevWeek,
       revenuePrevMonth,
       ordersThisMonthCount,
-      monthOrderItems,
+      topServicesGroups,
       expensesMonth,
       totalExpensesCount,
       unpaidOrders,
@@ -55,79 +56,95 @@ export async function GET() {
       todaysOrders,
       weeklyPayments,
       weeklyOrders,
+      users,
     ] = await Promise.all([
-      // Current revenues
       prisma.payment.aggregate({
-        where: { tenantId, createdAt: { gte: startOfDay } },
+        where: { tenantId, createdAt: { gte: startOfDay }, order: activeOrderFilter },
         _sum: { amount: true },
       }),
-      prisma.payment.aggregate({
-        where: { tenantId, createdAt: { gte: startOfWeek } },
-        _sum: { amount: true },
-      }),
-      prisma.payment.aggregate({
-        where: { tenantId, createdAt: { gte: startOfMonth } },
-        _sum: { amount: true },
-      }),
+      isAdmin
+        ? prisma.payment.aggregate({
+            where: { tenantId, createdAt: { gte: startOfWeek }, order: activeOrderFilter },
+            _sum: { amount: true },
+          })
+        : Promise.resolve({ _sum: { amount: 0 } }),
+      isAdmin
+        ? prisma.payment.aggregate({
+            where: { tenantId, createdAt: { gte: startOfMonth }, order: activeOrderFilter },
+            _sum: { amount: true },
+          })
+        : Promise.resolve({ _sum: { amount: 0 } }),
 
-      // Prior comparative revenues
-      prisma.payment.aggregate({
-        where: { tenantId, createdAt: { gte: startOfYesterday, lt: startOfDay } },
-        _sum: { amount: true },
-      }),
-      prisma.payment.aggregate({
-        where: { tenantId, createdAt: { gte: startOfPrevWeek, lt: startOfWeek } },
-        _sum: { amount: true },
-      }),
-      prisma.payment.aggregate({
-        where: { tenantId, createdAt: { gte: startOfPrevMonth, lt: startOfMonth } },
-        _sum: { amount: true },
-      }),
+      isAdmin
+        ? prisma.payment.aggregate({
+            where: {
+              tenantId,
+              createdAt: { gte: startOfYesterday, lt: startOfDay },
+              order: activeOrderFilter,
+            },
+            _sum: { amount: true },
+          })
+        : Promise.resolve({ _sum: { amount: 0 } }),
+      isAdmin
+        ? prisma.payment.aggregate({
+            where: {
+              tenantId,
+              createdAt: { gte: startOfPrevWeek, lt: startOfWeek },
+              order: activeOrderFilter,
+            },
+            _sum: { amount: true },
+          })
+        : Promise.resolve({ _sum: { amount: 0 } }),
+      isAdmin
+        ? prisma.payment.aggregate({
+            where: {
+              tenantId,
+              createdAt: { gte: startOfPrevMonth, lt: startOfMonth },
+              order: activeOrderFilter,
+            },
+            _sum: { amount: true },
+          })
+        : Promise.resolve({ _sum: { amount: 0 } }),
 
-      // Total orders count this month for average order value calculation
       prisma.order.count({
         where: { tenantId, createdAt: { gte: startOfMonth }, deletedAt: null },
       }),
 
-      // Top services query for the month
-      prisma.orderItem.findMany({
-        where: {
-          order: {
-            tenantId,
-            createdAt: { gte: startOfMonth },
-            deletedAt: null,
-          },
-        },
-        select: {
-          name: true,
-          quantity: true,
-          total: true,
-        },
-      }),
+      // Agrégation SQL groupBy au lieu de charger tous les OrderItem du mois en mémoire
+      isAdmin
+        ? prisma.orderItem.groupBy({
+            by: ["name"],
+            where: {
+              order: {
+                tenantId,
+                createdAt: { gte: startOfMonth },
+                deletedAt: null,
+              },
+            },
+            _sum: { quantity: true, total: true },
+          })
+        : Promise.resolve([]),
 
-      // Current month expenses
-      prisma.expense.aggregate({
-        where: { tenantId, date: { gte: startOfMonth } },
-        _sum: { amount: true },
-        _count: true,
-      }),
+      isAdmin
+        ? prisma.expense.aggregate({
+            where: { tenantId, date: { gte: startOfMonth } },
+            _sum: { amount: true },
+            _count: true,
+          })
+        : Promise.resolve({ _sum: { amount: 0 }, _count: 0 }),
 
-      // Has any expense in tenant history
-      prisma.expense.count({
-        where: { tenantId },
-      }),
+      isAdmin ? prisma.expense.count({ where: { tenantId } }) : Promise.resolve(0),
 
-      // Unpaid totals
+      // Inclure toutes les commandes non soldées, y compris celles livrées à crédit (LIVRE)
       prisma.order.findMany({
         where: {
           tenantId,
-          status: { not: "LIVRE" },
           deletedAt: null,
+          paidAmount: { lt: prisma.order.fields.totalAmount },
         },
         select: { totalAmount: true, paidAmount: true },
       }),
 
-      // Late orders count
       prisma.order.count({
         where: {
           tenantId,
@@ -137,32 +154,32 @@ export async function GET() {
         },
       }),
 
-      // Orders by status
       prisma.order.groupBy({
         by: ["status"],
         where: { tenantId, deletedAt: null },
         _count: true,
       }),
 
-      // Today's payments by method
       prisma.payment.groupBy({
         by: ["method"],
-        where: { tenantId, createdAt: { gte: startOfDay } },
+        where: { tenantId, createdAt: { gte: startOfDay }, order: activeOrderFilter },
         _sum: { amount: true },
         _count: true,
       }),
 
-      // Recent payments
       prisma.payment.findMany({
-        where: { tenantId },
+        where: {
+          tenantId,
+          order: activeOrderFilter,
+          ...(isAdmin ? {} : { createdAt: { gte: startOfDay } }),
+        },
         include: {
           order: { select: { id: true, code: true, customer: { select: { name: true } } } },
         },
         orderBy: { createdAt: "desc" },
-        take: 100,
+        take: isAdmin ? 50 : 20,
       }),
 
-      // Urgent Orders (Late)
       prisma.order.findMany({
         where: {
           tenantId,
@@ -181,7 +198,6 @@ export async function GET() {
         orderBy: { promisedAt: "asc" },
       }),
 
-      // Today's Orders (Deliverable today)
       prisma.order.findMany({
         where: {
           tenantId,
@@ -200,31 +216,37 @@ export async function GET() {
         orderBy: { promisedAt: "asc" },
       }),
 
-      // Weekly Payments for real day-by-day revenue breakdown (Audit item 2)
-      prisma.payment.findMany({
-        where: { tenantId, createdAt: { gte: startOfWeek } },
-        select: { amount: true, createdAt: true },
-      }),
+      isAdmin
+        ? prisma.payment.findMany({
+            where: { tenantId, createdAt: { gte: startOfWeek }, order: activeOrderFilter },
+            select: { amount: true, createdAt: true },
+          })
+        : Promise.resolve([]),
 
-      // Weekly Orders for real day-by-day volume breakdown
       prisma.order.findMany({
         where: { tenantId, createdAt: { gte: startOfWeek }, deletedAt: null },
         select: { createdAt: true },
       }),
+
+      prisma.user.findMany({
+        where: { tenantId },
+        select: { id: true, name: true },
+      }),
     ]);
 
-    // Calculate real revenue & orders per day of the week (Monday=0 to Sunday=6)
     const weeklyDailyRevenue = [0, 0, 0, 0, 0, 0, 0];
-    for (const p of weeklyPayments) {
-      const pDate = new Date(p.createdAt);
-      const dayIdx = (pDate.getDay() + 6) % 7;
-      if (dayIdx >= 0 && dayIdx < 7) {
-        weeklyDailyRevenue[dayIdx] += p.amount;
+    if (isAdmin) {
+      for (const p of weeklyPayments) {
+        const pDate = new Date(p.createdAt);
+        const dayIdx = (pDate.getDay() + 6) % 7;
+        if (dayIdx >= 0 && dayIdx < 7) {
+          weeklyDailyRevenue[dayIdx] += p.amount;
+        }
       }
     }
 
     const weeklyDailyOrders = [0, 0, 0, 0, 0, 0, 0];
-    for (const o of (weeklyOrders || [])) {
+    for (const o of weeklyOrders || []) {
       const oDate = new Date(o.createdAt);
       const dayIdx = (oDate.getDay() + 6) % 7;
       if (dayIdx >= 0 && dayIdx < 7) {
@@ -233,62 +255,57 @@ export async function GET() {
     }
 
     const currentDayRevenue = revenueDay._sum.amount || 0;
-    const currentWeekRevenue = revenueWeek._sum.amount || 0;
-    const monthRevenue = revenueMonth._sum.amount || 0;
+    const currentWeekRevenue = isAdmin ? revenueWeek._sum.amount || 0 : 0;
+    const monthRevenue = isAdmin ? revenueMonth._sum.amount || 0 : 0;
 
     const yesterdayRevenue = revenueYesterday._sum.amount || 0;
     const prevWeekRevenue = revenuePrevWeek._sum.amount || 0;
     const prevMonthRevenue = revenuePrevMonth._sum.amount || 0;
 
-    // Growth indicators (% vs yesterday, % vs previous week, % vs previous month)
-    const growth = {
-      day: computeGrowth(currentDayRevenue, yesterdayRevenue),
-      week: computeGrowth(currentWeekRevenue, prevWeekRevenue),
-      month: computeGrowth(monthRevenue, prevMonthRevenue),
-    };
+    const growth = isAdmin
+      ? {
+          day: computeGrowth(currentDayRevenue, yesterdayRevenue),
+          week: computeGrowth(currentWeekRevenue, prevWeekRevenue),
+          month: computeGrowth(monthRevenue, prevMonthRevenue),
+        }
+      : { day: null, week: null, month: null };
 
-    // Calculate Top 5 Services of the Month
-    const serviceMap = new Map<string, { quantity: number; total: number }>();
-    let totalItemsCount = 0;
-    for (const item of monthOrderItems) {
-      const existing = serviceMap.get(item.name) || { quantity: 0, total: 0 };
-      existing.quantity += item.quantity;
-      existing.total += item.total;
-      serviceMap.set(item.name, existing);
-      totalItemsCount += item.quantity;
-    }
+    const totalItemsCount = topServicesGroups.reduce(
+      (acc, g) => acc + (g._sum.quantity || 0),
+      0
+    );
+    const topServices = isAdmin
+      ? topServicesGroups
+          .map((g) => {
+            const quantity = g._sum.quantity || 0;
+            const total = g._sum.total || 0;
+            return {
+              name: g.name,
+              quantity,
+              total,
+              percentage:
+                totalItemsCount > 0 ? Math.round((quantity / totalItemsCount) * 100) : 0,
+            };
+          })
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 5)
+      : [];
 
-    const topServices = Array.from(serviceMap.entries())
-      .map(([name, stat]) => ({
-        name,
-        quantity: stat.quantity,
-        total: stat.total,
-        percentage: totalItemsCount > 0 ? Math.round((stat.quantity / totalItemsCount) * 100) : 0,
-      }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-
-    // Panier Moyen (Average Order Value)
-    const averageOrderValue = ordersThisMonthCount > 0
-      ? Math.round(monthRevenue / ordersThisMonthCount)
-      : 0;
+    const averageOrderValue =
+      isAdmin && ordersThisMonthCount > 0
+        ? Math.round(monthRevenue / ordersThisMonthCount)
+        : 0;
 
     const totalUnpaid = unpaidOrders.reduce(
-      (sum: number, o: { totalAmount: number; paidAmount: number }) => sum + (o.totalAmount - o.paidAmount),
+      (sum, o) => sum + Math.max(0, o.totalAmount - o.paidAmount),
       0
     );
 
-    const users = await prisma.user.findMany({
-      where: { tenantId },
-      select: { id: true, name: true },
-    });
-    const userMap = new Map<string, string>(users.map((u: { id: string; name: string }) => [u.id, u.name]));
+    const userMap = new Map<string, string>(users.map((u) => [u.id, u.name]));
 
     const monthExpenses = expensesMonth._sum.amount || 0;
     const netProfit = monthRevenue - monthExpenses;
     const margin = monthRevenue > 0 ? Math.round((netProfit / monthRevenue) * 100) : 0;
-
-    const isAdmin = session.role === "ADMIN" || session.role === "SUPER_ADMIN";
 
     return successResponse({
       revenue: {
@@ -316,14 +333,14 @@ export async function GET() {
       totalUnpaid,
       lateOrders,
       ordersByStatus: Object.fromEntries(
-        ordersByStatus.map((s: { status: string; _count: number }) => [s.status, s._count])
+        ordersByStatus.map((s) => [s.status, s._count])
       ),
-      paymentsByMethod: paymentsByMethod.map((p: { method: string; _sum: { amount: number | null }; _count: number }) => ({
+      paymentsByMethod: paymentsByMethod.map((p) => ({
         method: p.method,
         total: p._sum.amount || 0,
         count: p._count,
       })),
-      recentPayments: recentPayments.map((p: any) => ({
+      recentPayments: recentPayments.map((p) => ({
         id: p.id,
         orderId: p.order.id,
         amount: p.amount,

@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 import { createUserSchema } from "@/lib/validators";
 import { hashPassword } from "@/lib/auth";
+import { auditLog } from "@/lib/audit";
+import { checkUserCreationQuota } from "@/lib/subscription-limits";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 
 export async function GET() {
@@ -33,6 +35,11 @@ export async function POST(request: NextRequest) {
     const data = createUserSchema.parse(body);
     const normalizedEmail = data.email.trim().toLowerCase();
 
+    const quota = await checkUserCreationQuota(session.tenantId);
+    if (!quota.allowed) {
+      return errorResponse(quota.message || "Limite d'utilisateurs atteinte", 403);
+    }
+
     const existing = await prisma.user.findFirst({
       where: { email: normalizedEmail },
     });
@@ -57,6 +64,15 @@ export async function POST(request: NextRequest) {
         active: true,
         createdAt: true,
       },
+    });
+
+    await auditLog({
+      tenantId: session.tenantId,
+      userId: session.userId,
+      action: "USER_CREATED",
+      entity: "User",
+      entityId: user.id,
+      details: { email: user.email, role: user.role },
     });
 
     return successResponse(user, 201);

@@ -13,67 +13,102 @@ interface PullToRefreshProps {
 const PULL_THRESHOLD = 60;
 const MAX_PULL = 90;
 
+function shouldIgnoreTouchTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.closest('[role="dialog"], [aria-modal="true"], [data-no-ptr="true"]')) {
+    return true;
+  }
+  let el: HTMLElement | null = target;
+  while (el && el !== document.body && el !== document.documentElement) {
+    if (el.scrollTop > 0) {
+      return true;
+    }
+    el = el.parentElement;
+  }
+  return false;
+}
+
 export function PullToRefresh({ onRefresh, children, disabled = false }: PullToRefreshProps) {
   const [pullY, setPullY] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [isPulling, setIsPulling] = useState(false);
+
   const startYRef = useRef(0);
+  const pullYRef = useRef(0);
   const isPullingRef = useRef(false);
+  const refreshingRef = useRef(false);
   const hasTriggeredHapticRef = useRef(false);
+  const onRefreshRef = useRef(onRefresh);
+
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
+
+  useEffect(() => {
+    refreshingRef.current = refreshing;
+  }, [refreshing]);
 
   useEffect(() => {
     if (disabled) return;
 
+    const updatePull = (next: number) => {
+      pullYRef.current = next;
+      setPullY(next);
+    };
+
     const handleTouchStart = (e: TouchEvent) => {
-      // Only start pull if at the top of the viewport
-      if (window.scrollY <= 2) {
+      if (refreshingRef.current) return;
+      if (window.scrollY <= 2 && !shouldIgnoreTouchTarget(e.target)) {
         startYRef.current = e.touches[0].clientY;
         isPullingRef.current = true;
+        setIsPulling(true);
         hasTriggeredHapticRef.current = false;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isPullingRef.current || refreshing) return;
+      if (!isPullingRef.current || refreshingRef.current) return;
 
       const currentY = e.touches[0].clientY;
       const diff = currentY - startYRef.current;
 
       if (diff > 0 && window.scrollY <= 2) {
-        // Apply dampening resistance
         const dampened = Math.min(diff * 0.45, MAX_PULL);
-        setPullY(dampened);
+        updatePull(dampened);
 
         if (dampened >= PULL_THRESHOLD && !hasTriggeredHapticRef.current) {
           triggerHaptic("light");
           hasTriggeredHapticRef.current = true;
         }
 
-        // Prevent native overscroll bouncing when user pulls down at top
         if (e.cancelable && diff > 10) {
           e.preventDefault();
         }
-      } else {
-        setPullY(0);
+      } else if (pullYRef.current !== 0) {
+        updatePull(0);
       }
     };
 
     const handleTouchEnd = async () => {
       if (!isPullingRef.current) return;
       isPullingRef.current = false;
+      setIsPulling(false);
 
-      if (pullY >= PULL_THRESHOLD && !refreshing) {
+      if (pullYRef.current >= PULL_THRESHOLD && !refreshingRef.current) {
+        refreshingRef.current = true;
         setRefreshing(true);
-        setPullY(45); // hold in loading position
+        updatePull(45);
         triggerHaptic("medium");
 
         try {
-          await onRefresh();
+          await onRefreshRef.current();
         } finally {
+          refreshingRef.current = false;
           setRefreshing(false);
-          setPullY(0);
+          updatePull(0);
         }
       } else {
-        setPullY(0);
+        updatePull(0);
       }
     };
 
@@ -86,7 +121,7 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [disabled, refreshing, pullY, onRefresh]);
+  }, [disabled]);
 
   const rotation = Math.min((pullY / PULL_THRESHOLD) * 360, 360);
   const opacity = Math.min(pullY / 30, 1);
@@ -108,7 +143,13 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
               refreshing ? "animate-spin" : ""
             }`}
           />
-          <span>{refreshing ? "Actualisation..." : pullY >= PULL_THRESHOLD ? "Relâcher pour actualiser" : "Tirer pour actualiser"}</span>
+          <span>
+            {refreshing
+              ? "Actualisation..."
+              : pullY >= PULL_THRESHOLD
+              ? "Relâcher pour actualiser"
+              : "Tirer pour actualiser"}
+          </span>
         </div>
       </div>
 
@@ -116,7 +157,7 @@ export function PullToRefresh({ onRefresh, children, disabled = false }: PullToR
       <div
         style={{
           transform: pullY > 0 && !refreshing ? `translateY(${pullY * 0.4}px)` : undefined,
-          transition: isPullingRef.current ? "none" : "transform 0.25s ease-out",
+          transition: isPulling ? "none" : "transform 0.25s ease-out",
         }}
       >
         {children}

@@ -1,114 +1,128 @@
-import { describe, it, expect } from "vitest";
-import { normalizePhoneForWhatsApp } from "@/lib/phone";
-import { createExpenseSchema } from "@/lib/validators";
+import { describe, expect, it } from "vitest";
+import {
+  MAX_FCFA_AMOUNT,
+  createExpenseSchema,
+  createUserSchema,
+  registerSchema,
+  strongPasswordSchema,
+  updateExpenseSchema,
+} from "@/lib/validators";
+import {
+  activateSubscriptionFromCinetPay,
+  subscriptionDaysFor,
+  type SubscriptionPaymentRow,
+} from "@/lib/subscription-billing";
 
-describe("WhatsApp phone normalization", () => {
-  it("normalizes senegalese local numbers correctly", () => {
-    expect(normalizePhoneForWhatsApp("77 123 45 67")).toBe("221771234567");
-    expect(normalizePhoneForWhatsApp("+221 78 500 00 00")).toBe("221785000000");
-  });
-
-  it("handles numbers with extra spaces or dashes", () => {
-    expect(normalizePhoneForWhatsApp("+221-76-111-22-33")).toBe("221761112233");
-  });
-});
-
-describe("Expense validation schema", () => {
-  it("validates a standard expense", () => {
-    const valid = {
-      description: "Achat 3 bidons lessive OMO 5L",
-      amount: 15000,
+describe("Dépenses, Facturation Abonnements Annuels & Politique de Mot de Passe", () => {
+  it("valide les dépenses (catégories, dates valides et plafond FCFA)", () => {
+    const valid = createExpenseSchema.safeParse({
+      description: "Bidon lessive professionnelle 20L",
+      amount: 18500,
       category: "PRODUITS",
-      paymentMethod: "CASH",
+      date: "2026-11-08",
+      paymentMethod: "WAVE",
+      supplier: "Dakar Chimie",
+    });
+    expect(valid.success).toBe(true);
+
+    const defaulted = createExpenseSchema.safeParse({
+      description: "Course livreur",
+      amount: 1500,
+    });
+    expect(defaulted.success).toBe(true);
+    if (defaulted.success) {
+      expect(defaulted.data.category).toBe("AUTRE");
+      expect(defaulted.data.paymentMethod).toBe("CASH");
+    }
+
+    expect(
+      createExpenseSchema.safeParse({
+        description: "Date corrompue",
+        amount: 2000,
+        date: "pas-une-date",
+      }).success
+    ).toBe(false);
+
+    expect(
+      createExpenseSchema.safeParse({
+        description: "Montant excessif",
+        amount: MAX_FCFA_AMOUNT + 500,
+      }).success
+    ).toBe(false);
+
+    expect(updateExpenseSchema.safeParse({ amount: 2500 }).success).toBe(true);
+  });
+
+  it("accorde 365 jours aux forfaits annuels (dont BASIC 50 000 FCFA) et rejette les sous-paiements CinetPay", async () => {
+    expect(subscriptionDaysFor("BASIC", 5000)).toBe(30);
+    expect(subscriptionDaysFor("BASIC", 50000)).toBe(365);
+    expect(subscriptionDaysFor("PRO", 10000)).toBe(30);
+    expect(subscriptionDaysFor("PRO", 100000)).toBe(365);
+    expect(subscriptionDaysFor("ENTERPRISE", 50000)).toBe(30);
+    expect(subscriptionDaysFor("ENTERPRISE", 500000)).toBe(365);
+
+    const pendingAnnualBasic: SubscriptionPaymentRow = {
+      id: "sub-pay-1",
+      tenantId: "tenant-1",
+      plan: "BASIC",
+      amount: 50000,
+      transactionId: "SUB-BASIC-1731024000",
+      status: "PENDING",
     };
-    const parsed = createExpenseSchema.parse(valid);
-    expect(parsed.amount).toBe(15000);
-    expect(parsed.category).toBe("PRODUITS");
+
+    const alreadyDone = await activateSubscriptionFromCinetPay(
+      { ...pendingAnnualBasic, status: "SUCCESS" },
+      { success: true, status: "ACCEPTED", amount: 50000, currency: "XOF" },
+      "webhook"
+    );
+    expect(alreadyDone).toEqual({ activated: false, reason: "already-processed" });
+
+    const underpaid = await activateSubscriptionFromCinetPay(
+      pendingAnnualBasic,
+      { success: true, status: "ACCEPTED", amount: 5000, currency: "XOF" },
+      "webhook"
+    );
+    expect(underpaid.activated).toBe(false);
+    if (!underpaid.activated) {
+      expect(underpaid.reason).toBe("mismatch");
+    }
+
+    const wrongCurrency = await activateSubscriptionFromCinetPay(
+      pendingAnnualBasic,
+      { success: true, status: "ACCEPTED", amount: 50000, currency: "USD" },
+      "return"
+    );
+    expect(wrongCurrency.activated).toBe(false);
+    if (!wrongCurrency.activated) {
+      expect(wrongCurrency.reason).toBe("mismatch");
+    }
   });
 
-  it("rejects negative or zero amount", () => {
-    const invalid = {
-      description: "Carburant",
-      amount: 0,
-      category: "LIVRAISON",
-    };
-    expect(() => createExpenseSchema.parse(invalid)).toThrow();
-  });
+  it("applique uniformément la politique de mot de passe fort (10 à 100 caractères complexes)", () => {
+    expect(strongPasswordSchema.safeParse("court1!A").success).toBe(false);
+    expect(strongPasswordSchema.safeParse("sansmajuscule123!").success).toBe(false);
+    expect(strongPasswordSchema.safeParse("SANSCHIFFRE!abc").success).toBe(false);
+    expect(strongPasswordSchema.safeParse("SansSpecial1234").success).toBe(false);
+    expect(strongPasswordSchema.safeParse(`Aa1!${"x".repeat(100)}`).success).toBe(false);
 
-  it("defaults category to AUTRE if omitted", () => {
-    const data = {
-      description: "Dépense diverse",
-      amount: 5000,
-    };
-    const parsed = createExpenseSchema.parse(data);
-    expect(parsed.category).toBe("AUTRE");
-  });
-});
+    expect(strongPasswordSchema.safeParse("Pressi#246810").success).toBe(true);
 
-describe("Profit and Loss Calculations", () => {
-  it("calculates net profit and margin correctly", () => {
-    const revenue = 1500000;
-    const expenses = 900000;
-    const netProfit = revenue - expenses;
-    const margin = Math.round((netProfit / revenue) * 100);
+    expect(
+      registerSchema.safeParse({
+        tenantName: "Pressing Teranga",
+        name: "Moussa Diop",
+        email: "moussa@teranga.sn",
+        password: "Pressi#246810",
+      }).success
+    ).toBe(true);
 
-    expect(netProfit).toBe(600000);
-    expect(margin).toBe(40);
-    expect(netProfit >= 0).toBe(true);
-  });
-
-  it("calculates net loss correctly when expenses exceed revenue", () => {
-    const revenue = 800000;
-    const expenses = 1100000;
-    const netProfit = revenue - expenses;
-
-    expect(netProfit).toBe(-300000);
-    expect(netProfit < 0).toBe(true);
-  });
-});
-
-describe("Role-based Financial Visibility Restrictions", () => {
-  function buildDashboardPayload(role: "AGENT" | "ADMIN" | "SUPER_ADMIN", rawMetrics: { revenue: number; expenses: number }) {
-    const isOwner = role === "ADMIN" || role === "SUPER_ADMIN";
-    return {
-      revenue: {
-        today: 25000,
-        thisWeek: 150000,
-        thisMonth: rawMetrics.revenue,
-      },
-      // Restricted for agents: Net profit, margin, and expenses
-      monthlyFinancials: isOwner
-        ? {
-            totalRevenue: rawMetrics.revenue,
-            totalExpenses: rawMetrics.expenses,
-            netProfit: rawMetrics.revenue - rawMetrics.expenses,
-            margin: Math.round(((rawMetrics.revenue - rawMetrics.expenses) / rawMetrics.revenue) * 100),
-          }
-        : null,
-      hasExpenses: isOwner ? rawMetrics.expenses > 0 : false,
-    };
-  }
-
-  it("permits agents to see Revenue (CA) but strictly hides Net Profit and Bilan", () => {
-    const agentPayload = buildDashboardPayload("AGENT", { revenue: 1500000, expenses: 800000 });
-
-    // Agent CAN see CA
-    expect(agentPayload.revenue.thisMonth).toBe(1500000);
-    expect(agentPayload.revenue.today).toBe(25000);
-
-    // Agent CANNOT see Net Profit, Margin, or Expenses (Bilan)
-    expect(agentPayload.monthlyFinancials).toBeNull();
-    expect(agentPayload.hasExpenses).toBe(false);
-  });
-
-  it("provides full Bilan and Net Profit to Admin and Super Admin", () => {
-    const adminPayload = buildDashboardPayload("ADMIN", { revenue: 1500000, expenses: 800000 });
-
-    expect(adminPayload.revenue.thisMonth).toBe(1500000);
-    expect(adminPayload.monthlyFinancials).not.toBeNull();
-    expect(adminPayload.monthlyFinancials?.netProfit).toBe(700000);
-    expect(adminPayload.monthlyFinancials?.totalExpenses).toBe(800000);
-    expect(adminPayload.monthlyFinancials?.margin).toBe(47);
-    expect(adminPayload.hasExpenses).toBe(true);
+    expect(
+      createUserSchema.safeParse({
+        name: "Awa Fall",
+        email: "awa@teranga.sn",
+        role: "AGENT",
+        password: "Pressi#975312",
+      }).success
+    ).toBe(true);
   });
 });

@@ -2,19 +2,24 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireTenantSession } from "@/lib/tenant";
 import { handleApiError, successResponse } from "@/lib/api-utils";
-import { Prisma } from "@prisma/client";
+import { PaymentMethod, Prisma } from "@prisma/client";
+
+const VALID_METHODS = new Set<string>(["CASH", "OM", "WAVE", "OTHER"]);
 
 export async function GET(request: NextRequest) {
   try {
     const session = await requireTenantSession();
     const tenantId = session.tenantId;
+    const isAdmin = session.role === "ADMIN" || session.role === "SUPER_ADMIN";
     const { searchParams } = new URL(request.url);
 
-    const period = searchParams.get("period") || "all";
+    const requestedPeriod = searchParams.get("period") || "today";
+    // Les agents comptoir n'ont accès qu'à la caisse du jour (protection confidentialité CA gérant)
+    const period = isAdmin ? requestedPeriod : "today";
     const method = searchParams.get("method") || "ALL";
     const q = searchParams.get("q")?.trim() || "";
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "25", 10)));
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "25", 10) || 25));
 
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -33,30 +38,39 @@ export async function GET(request: NextRequest) {
         d.setDate(d.getDate() - 7);
         return { gte: d };
       }
-      if (period === "30d" || period === "month") {
-        const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      if (period === "30d") {
+        // 30 jours glissants réels (distinct de `month` = mois civil)
+        const d = new Date(startOfToday);
+        d.setDate(d.getDate() - 30);
         return { gte: d };
+      }
+      if (period === "month") {
+        return { gte: new Date(now.getFullYear(), now.getMonth(), 1) };
       }
       return undefined;
     })();
 
-    // Construct Prisma where clause
     const where: Prisma.PaymentWhereInput = {
       tenantId,
+      order: {
+        deletedAt: null,
+        ...(q
+          ? {
+              OR: [
+                { code: { contains: q, mode: "insensitive" } },
+                { customer: { name: { contains: q, mode: "insensitive" } } },
+                { customer: { phone: { contains: q } } },
+              ],
+            }
+          : {}),
+      },
       ...(dateFilter ? { createdAt: dateFilter } : {}),
-      ...(method && method !== "ALL" ? { method: method as any } : {}),
+      ...(method && method !== "ALL" && VALID_METHODS.has(method)
+        ? { method: method as PaymentMethod }
+        : {}),
     };
 
-    if (q) {
-      where.OR = [
-        { order: { code: { contains: q, mode: "insensitive" } } },
-        { order: { customer: { name: { contains: q, mode: "insensitive" } } } },
-        { order: { customer: { phone: { contains: q } } } },
-      ];
-    }
-
-    // Run parallel count, aggregations and paginated payments
-    const [totalCount, amountAgg, methodGroups, payments] = await Promise.all([
+    const [totalCount, amountAgg, methodGroups, payments, users] = await Promise.all([
       prisma.payment.count({ where }),
 
       prisma.payment.aggregate({
@@ -88,13 +102,13 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
+
+      prisma.user.findMany({
+        where: { tenantId },
+        select: { id: true, name: true },
+      }),
     ]);
 
-    // Fetch user map for agent names
-    const users = await prisma.user.findMany({
-      where: { tenantId },
-      select: { id: true, name: true },
-    });
     const userMap = new Map<string, string>(users.map((u) => [u.id, u.name]));
 
     const summaryByMethod = {
@@ -131,6 +145,7 @@ export async function GET(request: NextRequest) {
       totalPages: Math.ceil(totalCount / limit) || 1,
       totalAmount: amountAgg._sum.amount || 0,
       summaryByMethod,
+      period,
     });
   } catch (error) {
     return handleApiError(error);

@@ -46,9 +46,28 @@ export async function GET(request: NextRequest) {
       prisma.customer.count({ where }),
     ]);
 
+    // Calcul exact du cumul dépensé sur l'intégralité des commandes non supprimées (et non seulement les 6 dernières)
+    const customerIds = rawCustomers.map((c) => c.id);
+    const spentTotals =
+      customerIds.length > 0
+        ? await prisma.order.groupBy({
+            by: ["customerId"],
+            where: {
+              tenantId: session.tenantId,
+              deletedAt: null,
+              customerId: { in: customerIds },
+            },
+            _sum: { totalAmount: true },
+          })
+        : [];
+
+    const spentByCustomerId = new Map<string, number>(
+      spentTotals.map((row) => [row.customerId, row._sum.totalAmount || 0])
+    );
+
     const customers = rawCustomers.map((c) => {
       const spendingTrend = c.orders.map((o) => o.totalAmount).reverse();
-      const totalSpent = c.orders.reduce((sum, o) => sum + o.totalAmount, 0);
+      const totalSpent = spentByCustomerId.get(c.id) ?? 0;
       return {
         id: c.id,
         name: c.name,
@@ -77,7 +96,6 @@ export async function POST(request: NextRequest) {
     const phoneCandidates = buildPhoneLookupCandidates(data.phone);
     const phonesToCheck = phoneCandidates.length > 0 ? phoneCandidates : [data.phone];
 
-    // Check duplicate phone for this tenant
     const existing = await prisma.customer.findFirst({
       where: {
         tenantId: session.tenantId,

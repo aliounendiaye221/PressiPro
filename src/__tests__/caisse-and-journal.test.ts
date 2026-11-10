@@ -1,160 +1,135 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import { computeFinalTotal, computeOrderItems } from "@/lib/order-utils";
+import {
+  MAX_FCFA_AMOUNT,
+  createOrderSchema,
+  createPaymentSchema,
+  updateOrderSchema,
+} from "@/lib/validators";
 
-interface MockPayment {
-  id: string;
-  tenantId: string;
-  amount: number;
-  method: "CASH" | "WAVE" | "OM" | "OTHER";
-  createdAt: Date;
-  orderCode: string;
-  customerName: string;
-  agentName: string;
-}
+describe("Caisse, Commandes & Journal Financier — Calculs réels et validations", () => {
+  const serviceMap = new Map([
+    [
+      "svc-costume",
+      {
+        id: "svc-costume",
+        name: "Costume 2 pièces",
+        price: 3500,
+        pricingType: "PER_ITEM" as const,
+      },
+    ],
+    [
+      "svc-kilo",
+      {
+        id: "svc-kilo",
+        name: "Linge au kilo",
+        price: 1200,
+        pricingType: "PER_KG" as const,
+      },
+    ],
+  ]);
 
-describe("Journal de Caisse & Encaissements Logic", () => {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0, 0);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const threeDaysAgo = new Date(today);
-  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-  const twoMonthsAgo = new Date(today);
-  twoMonthsAgo.setDate(twoMonthsAgo.getDate() - 60);
+  it("calcule exactement les totaux mixtes à la pièce et au kilo (avec arrondi au franc)", () => {
+    const result = computeOrderItems(
+      [
+        { serviceId: "svc-costume", quantity: 2 },
+        { serviceId: "svc-kilo", weight: 2.345 },
+      ],
+      serviceMap
+    );
 
-  const mockPayments: MockPayment[] = [
-    {
-      id: "p1",
-      tenantId: "pressing-1",
-      amount: 15000,
-      method: "CASH",
-      createdAt: today,
-      orderCode: "CMD-001",
-      customerName: "Amadou Diallo",
-      agentName: "Fatou",
-    },
-    {
-      id: "p2",
-      tenantId: "pressing-1",
-      amount: 25000,
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({
+      serviceId: "svc-costume",
+      quantity: 2,
+      weight: null,
+      total: 7000,
+    });
+    // 2.345 kg arrondi à 2.35 kg * 1200 = 2820 FCFA
+    expect(result.items[1]).toMatchObject({
+      serviceId: "svc-kilo",
+      quantity: 1,
+      weight: 2.35,
+      total: 2820,
+    });
+    expect(result.itemsTotal).toBe(9820);
+  });
+
+  it("rejette les articles invalides (service inconnu, poids manquant/nul ou quantité fractionnaire)", () => {
+    expect(() =>
+      computeOrderItems([{ serviceId: "svc-inconnu", quantity: 1 }], serviceMap)
+    ).toThrow(/Service introuvable/);
+
+    expect(() =>
+      computeOrderItems([{ serviceId: "svc-kilo", weight: 0 }], serviceMap)
+    ).toThrow(/poids/i);
+
+    expect(() =>
+      computeOrderItems([{ serviceId: "svc-costume", quantity: 1.5 }], serviceMap)
+    ).toThrow(/Quantité invalide/);
+  });
+
+  it("plafonne toujours la remise au sous-total pour éviter tout montant négatif", () => {
+    expect(computeFinalTotal(10000, 2500)).toEqual({
+      totalAmount: 7500,
+      cappedDiscount: 2500,
+    });
+
+    expect(computeFinalTotal(5000, 12000)).toEqual({
+      totalAmount: 0,
+      cappedDiscount: 5000,
+    });
+
+    expect(computeFinalTotal(5000, -500)).toEqual({
+      totalAmount: 5000,
+      cappedDiscount: 0,
+    });
+  });
+
+  it("valide l'idempotence clientRequestId, les dates promises et la borne INT4 FCFA", () => {
+    const validPayment = createPaymentSchema.safeParse({
+      amount: 5000,
       method: "WAVE",
-      createdAt: today,
-      orderCode: "CMD-002",
-      customerName: "Mariama Ba",
-      agentName: "Modou",
-    },
-    {
-      id: "p3",
-      tenantId: "pressing-1",
-      amount: 10000,
-      method: "OM",
-      createdAt: yesterday,
-      orderCode: "CMD-003",
-      customerName: "Ibrahima Fall",
-      agentName: "Fatou",
-    },
-    {
-      id: "p4",
-      tenantId: "pressing-1",
-      amount: 8000,
+      note: "Acompte réception",
+      clientRequestId: "offline-queue-1731024000-abc123",
+    });
+    expect(validPayment.success).toBe(true);
+
+    const overflowPayment = createPaymentSchema.safeParse({
+      amount: MAX_FCFA_AMOUNT + 1,
       method: "CASH",
-      createdAt: threeDaysAgo,
-      orderCode: "CMD-004",
-      customerName: "Awa Ndiaye",
-      agentName: "Modou",
-    },
-    {
-      id: "p5",
-      tenantId: "pressing-2", // Different tenant (pressing 2)
-      amount: 99000,
+    });
+    expect(overflowPayment.success).toBe(false);
+
+    const zeroPayment = createPaymentSchema.safeParse({
+      amount: 0,
       method: "CASH",
-      createdAt: today,
-      orderCode: "CMD-999",
-      customerName: "Hacker / Other Tenant",
-      agentName: "Spy",
-    },
-    {
-      id: "p6",
-      tenantId: "pressing-1",
-      amount: 50000,
-      method: "OTHER",
-      createdAt: twoMonthsAgo,
-      orderCode: "CMD-000",
-      customerName: "Ancien Client",
-      agentName: "Fatou",
-    },
-  ];
+    });
+    expect(zeroPayment.success).toBe(false);
 
-  it("strictly isolates cash journal by tenantId (no data leaks)", () => {
-    const pressing1Payments = mockPayments.filter((p) => p.tenantId === "pressing-1");
-    const pressing2Payments = mockPayments.filter((p) => p.tenantId === "pressing-2");
+    const invalidDateOrder = createOrderSchema.safeParse({
+      customerId: "cust-1",
+      items: [{ serviceId: "svc-costume", quantity: 1 }],
+      promisedAt: "date-invalide-xyz",
+    });
+    expect(invalidDateOrder.success).toBe(false);
 
-    expect(pressing1Payments.length).toBe(5);
-    expect(pressing2Payments.length).toBe(1);
-    expect(pressing1Payments.some((p) => p.customerName.includes("Other Tenant"))).toBe(false);
-  });
+    const validOrder = createOrderSchema.safeParse({
+      customerId: "cust-1",
+      items: [{ serviceId: "svc-costume", quantity: 2 }],
+      promisedAt: "2026-11-10T17:30",
+      advanceAmount: 3000,
+      advanceMethod: "OM",
+      discountAmount: 500,
+      clientRequestId: "req-pos-001",
+    });
+    expect(validOrder.success).toBe(true);
 
-  it("filters correctly by period: today", () => {
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const pressing1 = mockPayments.filter((p) => p.tenantId === "pressing-1");
-    const todayPayments = pressing1.filter((p) => p.createdAt >= startOfToday);
-
-    expect(todayPayments.length).toBe(2);
-    expect(todayPayments.reduce((s, p) => s + p.amount, 0)).toBe(40000);
-  });
-
-  it("filters correctly by period: yesterday", () => {
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfYesterday = new Date(startOfToday);
-    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-
-    const pressing1 = mockPayments.filter((p) => p.tenantId === "pressing-1");
-    const yesterdayPayments = pressing1.filter(
-      (p) => p.createdAt >= startOfYesterday && p.createdAt < startOfToday
-    );
-
-    expect(yesterdayPayments.length).toBe(1);
-    expect(yesterdayPayments[0].orderCode).toBe("CMD-003");
-    expect(yesterdayPayments[0].amount).toBe(10000);
-  });
-
-  it("calculates breakdown by payment method accurately", () => {
-    const pressing1 = mockPayments.filter((p) => p.tenantId === "pressing-1");
-    const summary = {
-      CASH: pressing1.filter((p) => p.method === "CASH").reduce((s, p) => s + p.amount, 0),
-      WAVE: pressing1.filter((p) => p.method === "WAVE").reduce((s, p) => s + p.amount, 0),
-      OM: pressing1.filter((p) => p.method === "OM").reduce((s, p) => s + p.amount, 0),
-      OTHER: pressing1.filter((p) => p.method === "OTHER").reduce((s, p) => s + p.amount, 0),
-    };
-
-    expect(summary.CASH).toBe(23000); // 15000 + 8000
-    expect(summary.WAVE).toBe(25000);
-    expect(summary.OM).toBe(10000);
-    expect(summary.OTHER).toBe(50000);
-    expect(summary.CASH + summary.WAVE + summary.OM + summary.OTHER).toBe(108000);
-  });
-
-  it("supports search matching orderCode, customerName or agentName", () => {
-    const pressing1 = mockPayments.filter((p) => p.tenantId === "pressing-1");
-
-    const searchAmadou = pressing1.filter(
-      (p) =>
-        p.orderCode.toLowerCase().includes("amadou") ||
-        p.customerName.toLowerCase().includes("amadou") ||
-        p.agentName.toLowerCase().includes("amadou")
-    );
-    expect(searchAmadou.length).toBe(1);
-    expect(searchAmadou[0].id).toBe("p1");
-
-    const searchFatou = pressing1.filter(
-      (p) =>
-        p.orderCode.toLowerCase().includes("fatou") ||
-        p.customerName.toLowerCase().includes("fatou") ||
-        p.agentName.toLowerCase().includes("fatou")
-    );
-    expect(searchFatou.length).toBe(3); // p1, p3, p6
-
-    const searchCMD002 = pressing1.filter((p) => p.orderCode.toLowerCase().includes("cmd-002"));
-    expect(searchCMD002.length).toBe(1);
-    expect(searchCMD002[0].method).toBe("WAVE");
+    const discountOnlyUpdate = updateOrderSchema.safeParse({
+      discountAmount: 1000,
+      discountReason: "Client fidèle",
+      promisedAt: null,
+    });
+    expect(discountOnlyUpdate.success).toBe(true);
   });
 });

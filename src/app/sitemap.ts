@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL = "https://pressipro.tech";
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://pressipro.vercel.app";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
@@ -11,16 +11,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1,
     },
     {
-      url: `${SITE_URL}/login`,
+      url: `${SITE_URL}/privacy`,
       lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.5,
+      changeFrequency: "yearly",
+      priority: 0.4,
     },
     {
-      url: `${SITE_URL}/register`,
+      url: `${SITE_URL}/terms`,
       lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.8,
+      changeFrequency: "yearly",
+      priority: 0.4,
     },
   ];
 }

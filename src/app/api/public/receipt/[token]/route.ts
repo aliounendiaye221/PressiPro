@@ -12,7 +12,32 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/client-ip";
 
 const MAX_PUBLIC_RECEIPT_REQUESTS_PER_IP = 30;
-const PUBLIC_RECEIPT_WINDOW_MS = 60 * 1000; // 1 minute
+const PUBLIC_RECEIPT_WINDOW_MS = 60 * 1000;
+
+function sanitizePdfLogoUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("data:image/")) {
+    return trimmed.length <= 500_000 ? trimmed : null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:") return null;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host.endsWith(".local") ||
+      host.endsWith(".internal") ||
+      /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[0-1])\.|0\.)/.test(host) ||
+      host === "[::1]"
+    ) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -54,6 +79,7 @@ export async function GET(
         id: payload.orderId,
         tenantId: payload.tenantId,
         deletedAt: null,
+        tenant: { active: true },
       },
       include: {
         customer: true,
@@ -77,14 +103,14 @@ export async function GET(
       return errorResponse("Reçu introuvable", 404);
     }
 
-    const amountDue = order.totalAmount - order.paidAmount;
+    const amountDue = Math.max(0, order.totalAmount - order.paidAmount);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
     const qrText = `${appUrl}/share/receipt/${token}`;
     const qrDataUrl = await generateQRDataURL(qrText);
 
     const receiptData = {
       tenantName: order.tenant.name,
-      tenantLogoUrl: order.tenant.logoUrl,
+      tenantLogoUrl: sanitizePdfLogoUrl(order.tenant.logoUrl),
       tenantPrimaryColor: order.tenant.brandPrimaryColor,
       tenantAccentColor: order.tenant.brandAccentColor,
       tenantAddress: order.tenant.address,
@@ -98,6 +124,7 @@ export async function GET(
         : null,
       customerName: order.customer.name,
       customerPhone: order.customer.phone,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       items: order.items.map((item: any) => ({
         name: item.name,
         quantity: item.quantity,
@@ -117,16 +144,65 @@ export async function GET(
     };
 
     if (wantsMeta) {
-      return successResponse({
+      const [customerOrdersCount, statusHistory] = await Promise.all([
+        prisma.order.count({
+          where: {
+            tenantId: order.tenantId,
+            customerId: order.customerId,
+            deletedAt: null,
+          },
+        }),
+        prisma.orderStatusHistory.findMany({
+          where: { orderId: order.id },
+          orderBy: { createdAt: "asc" },
+          select: { toStatus: true, createdAt: true },
+        }),
+      ]);
+
+      const res = successResponse({
+        orderId: order.id,
         orderCode: order.code,
+        status: order.status,
+        createdAt: order.createdAt.toISOString(),
+        promisedAt: order.promisedAt ? order.promisedAt.toISOString() : null,
+        totalAmount: order.totalAmount,
+        discountAmount: order.discountAmount,
+        discountReason: order.discountReason,
+        paidAmount: order.paidAmount,
+        amountDue,
+        paymentStatus: receiptData.paymentStatus,
+        items: receiptData.items,
+        statusHistory: statusHistory.map((h) => ({
+          status: h.toStatus,
+          date: h.createdAt.toISOString(),
+        })),
+        tenant: {
+          id: order.tenantId,
+          name: order.tenant.name,
+          phone: order.tenant.phone,
+          address: order.tenant.address,
+          waveNumber: order.tenant.waveNumber,
+          omNumber: order.tenant.omNumber,
+          logoUrl: receiptData.tenantLogoUrl,
+          brandPrimaryColor: order.tenant.brandPrimaryColor,
+          brandAccentColor: order.tenant.brandAccentColor,
+        },
+        customer: {
+          name: order.customer.name,
+          phone: order.customer.phone,
+          ordersCount: customerOrdersCount,
+          memberSince: order.customer.createdAt.toISOString(),
+        },
+        // Legacy flat fields for backward compatibility
+        tenantId: order.tenantId,
         tenantName: order.tenant.name,
         tenantPhone: order.tenant.phone,
         tenantWaveNumber: order.tenant.waveNumber,
         tenantOmNumber: order.tenant.omNumber,
         customerName: order.customer.name,
-        paymentStatus: receiptData.paymentStatus,
-        amountDue,
       });
+      res.headers.set("Cache-Control", "private, no-store, no-cache, must-revalidate");
+      return res;
     }
 
     const pdfBuffer = await renderToBuffer(
@@ -146,7 +222,9 @@ export async function GET(
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `${isDownload ? "attachment" : "inline"}; filename="recu-${order.code}.pdf"`,
-        "Cache-Control": "public, max-age=300, stale-while-revalidate=86400",
+        // Privé & non mis en cache CDN : protège les données personnelles et reflète immédiatement un paiement en ligne
+        "Cache-Control": "private, no-store, no-cache, must-revalidate",
+        "X-Robots-Tag": "noindex, nofollow",
       },
     });
   } catch (error) {

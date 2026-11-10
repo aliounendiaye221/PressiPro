@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireTenantSession } from "@/lib/tenant";
 import { createReceiptShareToken } from "@/lib/receipt-share";
-import { initiateCinetPayPayment } from "@/lib/cinetpay";
+import { generateTransactionId, initiateCinetPayPayment } from "@/lib/cinetpay";
 import { errorResponse, successResponse, handleApiError } from "@/lib/api-utils";
 
 export async function POST(
@@ -43,9 +43,13 @@ export async function POST(
       tenantId: order.tenantId,
     });
 
+    const transactionId = generateTransactionId(order.code, {
+      tenantId: order.tenantId,
+      orderId: order.id,
+    });
     const origin = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
     const notifyUrl = `${origin}/api/webhooks/cinetpay`;
-    const returnUrl = `${origin}/share/receipt/${token}?payment=return`;
+    const returnUrl = `${origin}/share/receipt/${token}?payment=return&provider=cinetpay&tx=${encodeURIComponent(transactionId)}`;
     const receiptShareUrl = `${origin}/share/receipt/${token}`;
 
     const cinetpayResult = await initiateCinetPayPayment({
@@ -60,6 +64,7 @@ export async function POST(
       notifyUrl,
       returnUrl,
       customToken: token,
+      transactionId,
     });
 
     const directPaymentUrl = cinetpayResult.success ? cinetpayResult.paymentUrl : null;

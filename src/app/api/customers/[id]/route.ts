@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireTenantSession } from "@/lib/tenant";
+import { requireAdmin } from "@/lib/rbac";
 import { customerSchema } from "@/lib/validators";
+import { auditLog } from "@/lib/audit";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
 import { buildPhoneLookupCandidates } from "@/lib/phone";
 
@@ -18,6 +20,7 @@ export async function GET(
         where: { id, tenantId: session.tenantId },
         include: {
           orders: {
+            where: { deletedAt: null },
             orderBy: { createdAt: "desc" },
             select: {
               id: true,
@@ -68,14 +71,15 @@ export async function GET(
 
     const userMap = new Map<string, string>(users.map((u) => [u.id, u.name]));
 
-    // Aggregate statistics
     const totalOrders = customer.orders.length;
     const totalSpent = customer.orders.reduce((sum, o) => sum + o.totalAmount, 0);
     const totalPaid = customer.orders.reduce((sum, o) => sum + o.paidAmount, 0);
-    const totalDebt = Math.max(0, totalSpent - totalPaid);
+    const totalDebt = customer.orders.reduce(
+      (sum, o) => sum + Math.max(0, o.totalAmount - o.paidAmount),
+      0
+    );
     const activeOrdersCount = customer.orders.filter((o) => o.status !== "LIVRE").length;
 
-    // Collect and sort all payments across all orders
     const allPayments = customer.orders
       .flatMap((order) =>
         order.payments.map((p) => ({
@@ -117,7 +121,6 @@ export async function PUT(
     const body = await request.json();
     const data = customerSchema.parse(body);
 
-    // Verify customer belongs to tenant
     const existing = await prisma.customer.findFirst({
       where: { id, tenantId: session.tenantId },
     });
@@ -125,7 +128,6 @@ export async function PUT(
       return errorResponse("Client introuvable", 404);
     }
 
-    // Check phone uniqueness (if changed)
     if (data.phone !== existing.phone) {
       const phoneCandidates = buildPhoneLookupCandidates(data.phone);
       const phonesToCheck = phoneCandidates.length > 0 ? phoneCandidates : [data.phone];
@@ -164,7 +166,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireTenantSession();
+    const session = await requireAdmin();
     const { id } = await params;
 
     const customer = await prisma.customer.findFirst({
@@ -181,6 +183,16 @@ export async function DELETE(
     }
 
     await prisma.customer.delete({ where: { id } });
+
+    await auditLog({
+      tenantId: session.tenantId,
+      userId: session.userId,
+      action: "CUSTOMER_DELETED",
+      entity: "Customer",
+      entityId: id,
+      details: { name: customer.name, phone: customer.phone },
+    });
+
     return successResponse({ ok: true });
   } catch (error) {
     return handleApiError(error);

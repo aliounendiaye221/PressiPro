@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 import { handleApiError, successResponse, errorResponse } from "@/lib/api-utils";
-
 import { hashPassword } from "@/lib/auth";
+import { strongPasswordSchema } from "@/lib/validators";
 
 export async function PUT(
   request: NextRequest,
@@ -21,12 +21,10 @@ export async function PUT(
       return errorResponse("Utilisateur introuvable", 404);
     }
 
-    // Cannot modify yourself
     if (existing.id === session.userId) {
       return errorResponse("Vous ne pouvez pas modifier votre propre compte", 400);
     }
 
-    // Cannot modify a SUPER_ADMIN
     if (existing.role === "SUPER_ADMIN") {
       return errorResponse("Impossible de modifier un Super Admin", 403);
     }
@@ -48,11 +46,15 @@ export async function PUT(
     }
 
     if (body.password !== undefined) {
-      if (typeof body.password !== "string" || body.password.length < 6) {
-        return errorResponse("Le mot de passe doit comporter au moins 6 caractères", 400);
+      const parsedPw = strongPasswordSchema.safeParse(body.password);
+      if (!parsedPw.success) {
+        return errorResponse(
+          parsedPw.error.errors[0]?.message ||
+            "Le mot de passe doit contenir au moins 10 caractères (majuscule, minuscule, chiffre et caractère spécial)",
+          400
+        );
       }
-      updateData.password = await hashPassword(body.password);
-      // Reset lockout if employee was locked
+      updateData.password = await hashPassword(parsedPw.data);
       updateData.failedLoginAttempts = 0;
       updateData.lockedUntil = null;
     }

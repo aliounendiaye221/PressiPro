@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface AnimatedNumberProps {
   value: number;
@@ -26,28 +26,38 @@ export function AnimatedNumber({
   className = "",
 }: AnimatedNumberProps) {
   const [displayValue, setDisplayValue] = useState(0);
+  const currentRef = useRef(0);
 
   useEffect(() => {
-    let startTimestamp: number | null = null;
-    const startVal = displayValue;
+    const startVal = currentRef.current;
     const endVal = value;
 
     if (startVal === endVal) return;
 
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      const id = requestAnimationFrame(() => {
+        currentRef.current = endVal;
+        setDisplayValue(endVal);
+      });
+      return () => cancelAnimationFrame(id);
+    }
+
+    let startTimestamp: number | null = null;
     let animationFrameId: number;
 
     const step = (timestamp: number) => {
       if (!startTimestamp) startTimestamp = timestamp;
       const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-      // Ease out cubic
       const easeProgress = 1 - Math.pow(1 - progress, 3);
       const current = Math.round(startVal + (endVal - startVal) * easeProgress);
 
+      currentRef.current = current;
       setDisplayValue(current);
 
       if (progress < 1) {
         animationFrameId = requestAnimationFrame(step);
       } else {
+        currentRef.current = endVal;
         setDisplayValue(endVal);
       }
     };

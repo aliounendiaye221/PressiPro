@@ -13,6 +13,7 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
     const data = serviceSchema.parse(body);
+    const trimmedName = data.name.trim();
 
     const existing = await prisma.service.findFirst({
       where: { id, tenantId: session.tenantId },
@@ -21,11 +22,22 @@ export async function PUT(
       return errorResponse("Service introuvable", 404);
     }
 
+    if (trimmedName !== existing.name) {
+      const duplicate = await prisma.service.findUnique({
+        where: { tenantId_name: { tenantId: session.tenantId, name: trimmedName } },
+        select: { id: true },
+      });
+      if (duplicate && duplicate.id !== id) {
+        return errorResponse("Un autre service avec ce nom existe déjà", 409);
+      }
+    }
+
     const service = await prisma.service.update({
       where: { id },
       data: {
-        name: data.name,
+        name: trimmedName,
         price: data.price,
+        pricingType: data.pricingType ?? existing.pricingType,
         category: data.category || null,
         isQuickItem: data.isQuickItem ?? existing.isQuickItem,
         sortOrder: data.sortOrder ?? existing.sortOrder,
@@ -53,7 +65,6 @@ export async function DELETE(
       return errorResponse("Service introuvable", 404);
     }
 
-    // Soft delete: deactivate instead of removing
     await prisma.service.update({
       where: { id },
       data: { active: false },

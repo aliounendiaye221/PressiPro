@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyReceiptShareToken } from "@/lib/receipt-share";
-import { initiateCinetPayPayment } from "@/lib/cinetpay";
+import { generateTransactionId, initiateCinetPayPayment } from "@/lib/cinetpay";
 import { errorResponse, successResponse, handleApiError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/client-ip";
@@ -32,6 +32,7 @@ export async function POST(
         id: payload.orderId,
         tenantId: payload.tenantId,
         deletedAt: null,
+        tenant: { active: true },
       },
       include: {
         customer: true,
@@ -52,7 +53,6 @@ export async function POST(
       return errorResponse("Cette commande est déjà intégralement payée.", 400);
     }
 
-    // Montant à payer (par défaut le solde total)
     let bodyAmount: number | undefined;
     try {
       const body = await request.json();
@@ -60,16 +60,21 @@ export async function POST(
         bodyAmount = body.amount;
       }
     } catch {
-      // Pas de corps JSON, on prend amountDue par défaut
+      // default to amountDue
     }
 
-    const paymentAmount = bodyAmount && bodyAmount > 0 && bodyAmount <= amountDue
-      ? Math.round(bodyAmount)
-      : amountDue;
+    const paymentAmount =
+      bodyAmount && bodyAmount > 0 && bodyAmount <= amountDue
+        ? Math.round(bodyAmount)
+        : amountDue;
 
+    const transactionId = generateTransactionId(order.code, {
+      tenantId: order.tenantId,
+      orderId: order.id,
+    });
     const origin = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
     const notifyUrl = `${origin}/api/webhooks/cinetpay`;
-    const returnUrl = `${origin}/share/receipt/${token}?payment=return`;
+    const returnUrl = `${origin}/share/receipt/${token}?payment=return&provider=cinetpay&tx=${encodeURIComponent(transactionId)}`;
 
     const result = await initiateCinetPayPayment({
       amount: paymentAmount,
@@ -83,6 +88,7 @@ export async function POST(
       notifyUrl,
       returnUrl,
       customToken: token,
+      transactionId,
     });
 
     if (!result.success || !result.paymentUrl) {

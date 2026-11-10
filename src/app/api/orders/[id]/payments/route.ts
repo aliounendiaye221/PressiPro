@@ -16,45 +16,54 @@ export async function POST(
     const body = await request.json();
     const data = createPaymentSchema.parse(body);
 
-    // Vérification préliminaire (non bloquante) pour retourner un 404 rapide.
-    const orderExists = await prisma.order.findFirst({
-      where: { id: orderId, tenantId: session.tenantId, deletedAt: null },
-      select: { id: true },
-    });
-
-    if (!orderExists) {
-      return errorResponse("Commande introuvable", 404);
-    }
-
-    // La vérification du solde restant ET la création du paiement sont dans la même
-    // transaction Prisma, ce qui garantit l'atomicité au niveau base de données.
-    // PostgreSQL sérialise les transactions concurrentes sur la même ligne via son
-    // mécanisme MVCC, empêchant les surpaiements en cas de requêtes simultanées.
     let overpaymentErrorMsg: string | null = null;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const txResult: { payment: any; newPaidAmount: number } | null = await prisma.$transaction(async (tx) => {
-      // Relecture de la commande à l'intérieur de la transaction pour avoir
-      // les valeurs courantes (protégées par l'isolation de la transaction).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const currentOrder = await (tx as any).order.findFirst({
-        where: { id: orderId, tenantId: session.tenantId, deletedAt: null },
-        select: { totalAmount: true, paidAmount: true },
-      });
+    const txResult = await prisma.$transaction(async (tx) => {
+      // Verrou exclusif `FOR UPDATE` sur la commande : sérialise strictement les paiements concurrents sous PostgreSQL READ COMMITTED
+      const lockedOrders = (await tx.$queryRaw`
+        SELECT id, "totalAmount", "paidAmount"
+        FROM "Order"
+        WHERE id = ${orderId} AND "tenantId" = ${session.tenantId} AND "deletedAt" IS NULL
+        FOR UPDATE
+      `) as Array<{ id: string; totalAmount: number; paidAmount: number }>;
 
+      const currentOrder = lockedOrders?.[0];
       if (!currentOrder) {
         throw new Error("NOT_FOUND");
       }
 
-      const amountDue = currentOrder.totalAmount - currentOrder.paidAmount;
+      // Idempotence pour la file d'attente hors-ligne (`clientRequestId`)
+      if (data.clientRequestId) {
+        const existingAudit = await tx.auditLog.findFirst({
+          where: {
+            tenantId: session.tenantId,
+            action: "PAYMENT_CREATED",
+            details: { contains: data.clientRequestId },
+          },
+          select: { entityId: true },
+        });
+        if (existingAudit) {
+          const existingPayment = await tx.payment.findUnique({
+            where: { id: existingAudit.entityId },
+          });
+          if (existingPayment) {
+            return {
+              payment: existingPayment,
+              newPaidAmount: Number(currentOrder.paidAmount),
+              deduplicated: true,
+            };
+          }
+        }
+      }
+
+      const amountDue = Math.max(0, Number(currentOrder.totalAmount) - Number(currentOrder.paidAmount));
 
       if (data.amount > amountDue) {
         overpaymentErrorMsg = `Montant dépasse le reste à payer (${amountDue} FCFA)`;
         return null;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const payment = await (tx as any).payment.create({
+      const payment = await tx.payment.create({
         data: {
           tenantId: session.tenantId,
           orderId,
@@ -65,14 +74,32 @@ export async function POST(
         },
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const updatedOrder = await (tx as any).order.update({
+      const updatedOrder = await tx.order.update({
         where: { id: orderId },
         data: { paidAmount: { increment: data.amount } },
         select: { id: true, paidAmount: true },
       });
 
-      return { payment, newPaidAmount: updatedOrder.paidAmount };
+      if (data.clientRequestId) {
+        await tx.auditLog.create({
+          data: {
+            tenantId: session.tenantId,
+            userId: session.userId,
+            action: "PAYMENT_CREATED",
+            entity: "Payment",
+            entityId: payment.id,
+            details: JSON.stringify({
+              orderId,
+              amount: data.amount,
+              method: data.method,
+              newPaidAmount: updatedOrder.paidAmount,
+              clientRequestId: data.clientRequestId,
+            }),
+          },
+        });
+      }
+
+      return { payment, newPaidAmount: updatedOrder.paidAmount, deduplicated: false };
     });
 
     if (overpaymentErrorMsg) {
@@ -83,21 +110,23 @@ export async function POST(
       return errorResponse("Commande introuvable", 404);
     }
 
-    await auditLog({
-      tenantId: session.tenantId,
-      userId: session.userId,
-      action: "PAYMENT_CREATED",
-      entity: "Payment",
-      entityId: txResult.payment.id,
-      details: {
-        orderId,
-        amount: data.amount,
-        method: data.method,
-        newPaidAmount: txResult.newPaidAmount,
-      },
-    });
+    if (!txResult.deduplicated && !data.clientRequestId) {
+      await auditLog({
+        tenantId: session.tenantId,
+        userId: session.userId,
+        action: "PAYMENT_CREATED",
+        entity: "Payment",
+        entityId: txResult.payment.id,
+        details: {
+          orderId,
+          amount: data.amount,
+          method: data.method,
+          newPaidAmount: txResult.newPaidAmount,
+        },
+      });
+    }
 
-    return successResponse(txResult.payment, 201);
+    return successResponse(txResult.payment, txResult.deduplicated ? 200 : 201);
   } catch (error) {
     return handleApiError(error);
   }
@@ -129,9 +158,9 @@ export async function GET(
       where: { tenantId: session.tenantId },
       select: { id: true, name: true },
     });
-    const userMap = new Map(users.map((u: any) => [u.id, u.name]));
+    const userMap = new Map(users.map((u) => [u.id, u.name]));
 
-    const enriched = payments.map((p: any) => ({
+    const enriched = payments.map((p) => ({
       ...p,
       agentName: p.createdBy ? userMap.get(p.createdBy) || "Agent" : "Système",
     }));
@@ -151,8 +180,16 @@ export async function DELETE(
     const { id: orderId } = await params;
     const { paymentId } = await request.json();
 
-    if (!paymentId) {
+    if (!paymentId || typeof paymentId !== "string") {
       return errorResponse("ID du paiement requis", 400);
+    }
+
+    const order = await prisma.order.findFirst({
+      where: { id: orderId, tenantId: session.tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!order) {
+      return errorResponse("Commande introuvable", 404);
     }
 
     const payment = await prisma.payment.findFirst({
@@ -164,15 +201,16 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async (tx) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (tx as any).payment.delete({ where: { id: paymentId } });
-      // Utilise GREATEST(0, ...) pour éviter un paidAmount négatif en cas d'incohérence de données.
-      // prisma.$executeRaw est appelé via le client tx pour rester dans la transaction.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (tx as any).$executeRaw`
+      await tx.$queryRaw`
+        SELECT id FROM "Order"
+        WHERE id = ${orderId} AND "tenantId" = ${session.tenantId} AND "deletedAt" IS NULL
+        FOR UPDATE
+      `;
+      await tx.payment.delete({ where: { id: paymentId } });
+      await tx.$executeRaw`
         UPDATE "Order"
         SET "paidAmount" = GREATEST(0, "paidAmount" - ${payment.amount})
-        WHERE id = ${orderId}
+        WHERE id = ${orderId} AND "tenantId" = ${session.tenantId}
       `;
     });
 
@@ -182,7 +220,12 @@ export async function DELETE(
       action: "PAYMENT_DELETED",
       entity: "Payment",
       entityId: paymentId,
-      details: { orderId, amount: payment.amount, method: payment.method },
+      details: {
+        orderId,
+        amount: payment.amount,
+        method: payment.method,
+        originalPaymentDate: payment.createdAt.toISOString(),
+      },
     });
 
     return successResponse({ ok: true });
